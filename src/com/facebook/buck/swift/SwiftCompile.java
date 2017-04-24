@@ -41,6 +41,7 @@ import com.facebook.buck.rules.args.FileListableLinkerInputArg;
 import com.facebook.buck.rules.args.SourcePathArg;
 import com.facebook.buck.rules.args.StringArg;
 import com.facebook.buck.rules.coercer.FrameworkPath;
+import com.facebook.buck.shell.BashStep;
 import com.facebook.buck.step.Step;
 import com.facebook.buck.step.fs.CopyStep;
 import com.facebook.buck.step.fs.MkdirStep;
@@ -90,6 +91,7 @@ class SwiftCompile extends AbstractBuildRule {
 
   private final boolean enableObjcInterop;
   private final Optional<SourcePath> bridgingHeader;
+  private final Optional<String> swiftProcessScript;
   private final SwiftBuckConfig swiftBuckConfig;
 
   private final Iterable<CxxPreprocessorInput> cxxPreprocessorInputs;
@@ -105,7 +107,8 @@ class SwiftCompile extends AbstractBuildRule {
       Iterable<SourcePath> srcs,
       ImmutableList<String> compilerFlags,
       Optional<Boolean> enableObjcInterop,
-      Optional<SourcePath> bridgingHeader) throws NoSuchBuildTargetException {
+      Optional<SourcePath> bridgingHeader,
+      Optional<String> swiftProcessScript) throws NoSuchBuildTargetException {
     super(params);
     this.cxxPlatform = cxxPlatform;
     this.frameworks = frameworks;
@@ -125,6 +128,7 @@ class SwiftCompile extends AbstractBuildRule {
     this.compilerFlags = compilerFlags;
     this.enableObjcInterop = enableObjcInterop.orElse(true);
     this.bridgingHeader = bridgingHeader;
+    this.swiftProcessScript = swiftProcessScript;
     performChecks(params);
   }
 
@@ -201,6 +205,13 @@ class SwiftCompile extends AbstractBuildRule {
         compilerCommand.build());
   }
 
+  private BashStep makeRunscriptStep() {
+    return new BashStep(
+        getProjectFilesystem().getRootPath(),
+        swiftProcessScript.get().toString(),
+        headerPath.toString());
+  }
+
   @Override
   public ImmutableList<Step> getBuildSteps(
       BuildContext context,
@@ -209,6 +220,10 @@ class SwiftCompile extends AbstractBuildRule {
     ImmutableList.Builder<Step> steps = ImmutableList.builder();
     steps.add(MkdirStep.of(getProjectFilesystem(), outputPath));
     steps.add(makeCompileStep(context.getSourcePathResolver()));
+
+    if (swiftProcessScript.isPresent()) {
+      steps.add(makeRunscriptStep());
+    }
 
     // Objective-C part can address -Swift.h file with a prefix within a mixed rule.
     // So let's just copy an emitted header to the expected location
