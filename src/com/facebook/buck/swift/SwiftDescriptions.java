@@ -77,6 +77,8 @@ public class SwiftDescriptions {
 
     boolean isCompanionTarget = buildTarget.getFlavors().contains(SWIFT_COMPANION_FLAVOR);
     output.preferredLinkage = isCompanionTarget ? Optional.of(STATIC) : args.preferredLinkage;
+
+    output.swiftProcessScript = args.swiftProcessScript;
   }
 
   static String toSwiftHeaderName(String moduleName) {

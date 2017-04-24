@@ -1226,6 +1226,7 @@ public class CxxLibraryDescription implements
     // used otherwise.
     public Optional<SourcePath> bridgingHeader;
     public Optional<String> moduleName;
+    public Optional<String> swiftProcessScript;
 
     /**
      * @return C/C++ deps which are propagated to dependents.

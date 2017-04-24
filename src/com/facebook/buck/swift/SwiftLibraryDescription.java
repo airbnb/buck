@@ -258,7 +258,8 @@ public class SwiftLibraryDescription implements
           args.srcs,
           args.compilerFlags,
           args.enableObjcInterop,
-          args.bridgingHeader);
+          args.bridgingHeader,
+          args.swiftProcessScript);
     }
 
     // Otherwise, we return the generic placeholder of this library.
@@ -459,6 +460,8 @@ public class SwiftLibraryDescription implements
 
     public ImmutableMap<Path, SourcePath> headers = ImmutableMap.of();
     public ImmutableMap<Path, SourcePath> exportedHeaders = ImmutableMap.of();
+
+    public Optional<String> swiftProcessScript;
   }
 
 }
