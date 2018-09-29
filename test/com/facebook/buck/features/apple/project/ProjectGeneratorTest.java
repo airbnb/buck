@@ -172,7 +172,7 @@ public class ProjectGeneratorTest {
   private static final BuildRule RULE_1 = new EmptyFakeBuildRule(TARGET_1);
   private static final Path OUTPUT_DIRECTORY = Paths.get("_gen");
   private static final String PROJECT_NAME = "GeneratedProject";
-  private static final String PROJECT_CONTAINER = PROJECT_NAME + ".xcodeproj";
+  private static final String PROJECT_CONTAINER = PROJECT_NAME + "-BUCK.xcodeproj";
   private static final Path OUTPUT_PROJECT_BUNDLE_PATH =
       OUTPUT_DIRECTORY.resolve(PROJECT_CONTAINER);
   private static final Path OUTPUT_PROJECT_FILE_PATH =
