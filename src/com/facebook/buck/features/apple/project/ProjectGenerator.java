@@ -371,7 +371,7 @@ public class ProjectGenerator {
             });
     this.buckEventBus = buckEventBus;
 
-    this.projectPath = outputDirectory.resolve(projectName + ".xcodeproj");
+    this.projectPath = outputDirectory.resolve(projectName + "-BUCK.xcodeproj");
     this.pathRelativizer =
         new PathRelativizer(outputDirectory, sourcePath -> resolveSourcePath(sourcePath).getPath());
     this.sharedLibraryToBundle = sharedLibraryToBundle;
@@ -3495,7 +3495,7 @@ public class ProjectGenerator {
   private void writeProjectFile(PBXProject project) throws IOException {
     XcodeprojSerializer serializer = new XcodeprojSerializer(gidGenerator, project);
     NSDictionary rootObject = serializer.toPlist();
-    Path xcodeprojDir = outputDirectory.resolve(projectName + ".xcodeproj");
+    Path xcodeprojDir = outputDirectory.resolve(projectName + "-BUCK.xcodeproj");
     projectFilesystem.mkdirs(xcodeprojDir);
     Path serializedProject = xcodeprojDir.resolve("project.pbxproj");
     String contentsToWrite = rootObject.toXMLPropertyList();
