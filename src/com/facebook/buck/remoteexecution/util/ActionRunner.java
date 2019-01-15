@@ -21,11 +21,12 @@ import com.facebook.buck.event.LeafEvents;
 import com.facebook.buck.remoteexecution.Protocol;
 import com.facebook.buck.remoteexecution.Protocol.Digest;
 import com.facebook.buck.remoteexecution.Protocol.Directory;
+import com.facebook.buck.remoteexecution.Protocol.FileNode;
 import com.facebook.buck.remoteexecution.Protocol.OutputDirectory;
 import com.facebook.buck.remoteexecution.Protocol.OutputFile;
 import com.facebook.buck.remoteexecution.Protocol.Tree;
-import com.facebook.buck.remoteexecution.util.FileTreeBuilder.InputFile;
-import com.facebook.buck.remoteexecution.util.FileTreeBuilder.ProtocolTreeBuilder;
+import com.facebook.buck.remoteexecution.UploadDataSupplier;
+import com.facebook.buck.remoteexecution.util.MerkleTreeNodeCache.MerkleTreeNode;
 import com.facebook.buck.util.Ansi;
 import com.facebook.buck.util.CapturingPrintStream;
 import com.facebook.buck.util.Console;
@@ -36,7 +37,6 @@ import com.facebook.buck.util.ProcessExecutorParams.Builder;
 import com.facebook.buck.util.RichStream;
 import com.facebook.buck.util.Scope;
 import com.facebook.buck.util.Verbosity;
-import com.facebook.buck.util.function.ThrowingSupplier;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -45,7 +45,6 @@ import com.google.common.io.MoreFiles;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -72,8 +71,7 @@ public class ActionRunner {
   public static class ActionResult {
     public final ImmutableList<OutputFile> outputFiles;
     public final ImmutableList<OutputDirectory> outputDirectories;
-    public final ImmutableMap<Protocol.Digest, ThrowingSupplier<InputStream, IOException>>
-        requiredData;
+    public final ImmutableMap<Protocol.Digest, UploadDataSupplier> requiredData;
     public final int exitCode;
     public final String stderr;
     public final String stdout;
@@ -81,7 +79,7 @@ public class ActionRunner {
     ActionResult(
         ImmutableList<OutputFile> outputFiles,
         ImmutableList<OutputDirectory> outputDirectories,
-        ImmutableMap<Digest, ThrowingSupplier<InputStream, IOException>> requiredData,
+        ImmutableMap<Digest, UploadDataSupplier> requiredData,
         int exitCode,
         String stderr,
         String stdout) {
@@ -120,7 +118,7 @@ public class ActionRunner {
 
     ImmutableList.Builder<OutputFile> outputFiles;
     ImmutableList.Builder<OutputDirectory> outputDirectories;
-    Map<Digest, ThrowingSupplier<InputStream, IOException>> requiredData = new HashMap<>();
+    Map<Digest, UploadDataSupplier> requiredData = new HashMap<>();
     try (Scope ignored = LeafEvents.scope(eventBus, "collecting_outputs")) {
       outputFiles = ImmutableList.builder();
       outputDirectories = ImmutableList.builder();
@@ -144,35 +142,44 @@ public class ActionRunner {
       Path buildDir,
       ImmutableList.Builder<OutputFile> outputFilesBuilder,
       ImmutableList.Builder<OutputDirectory> outputDirectoriesBuilder,
-      Map<Digest, ThrowingSupplier<InputStream, IOException>> requiredDataBuilder)
+      Map<Digest, UploadDataSupplier> requiredDataBuilder)
       throws IOException {
     for (Path output : outputs) {
       Path path = buildDir.resolve(output);
       Preconditions.checkState(Files.exists(path));
       if (Files.isDirectory(path)) {
-        FileTreeBuilder builder = new FileTreeBuilder();
+        Map<Path, FileNode> files = new HashMap<>();
 
         try (Stream<Path> contents = Files.walk(path)) {
           RichStream.from(contents)
               .forEachThrowing(
                   entry -> {
                     if (Files.isRegularFile(entry)) {
-                      builder.addFile(
+                      files.put(
                           path.relativize(entry),
-                          () ->
-                              new InputFile(
-                                  hashFile(entry).toString(),
-                                  (int) Files.size(entry),
-                                  Files.isExecutable(entry),
-                                  () -> new FileInputStream(entry.toFile())));
+                          protocol.newFileNode(
+                              protocol.newDigest(
+                                  hashFile(entry).toString(), (int) Files.size(entry)),
+                              entry.getFileName().toString(),
+                              Files.isExecutable(entry)));
                     }
                   });
         }
 
+        MerkleTreeNodeCache merkleTreeCache = new MerkleTreeNodeCache(protocol);
+
+        MerkleTreeNode node = merkleTreeCache.createNode(files, ImmutableMap.of());
+
+        node.forAllFiles(
+            path,
+            (file, fileNode) ->
+                requiredDataBuilder.put(
+                    fileNode.getDigest(), () -> new FileInputStream(file.toFile())));
+
         List<Directory> directories = new ArrayList<>();
-        builder.buildTree(
-            new ProtocolTreeBuilder(requiredDataBuilder::put, directories::add, protocol));
+        merkleTreeCache.forAllData(node, data -> directories.add(data.getDirectory()));
         Preconditions.checkState(!directories.isEmpty());
+
         Tree tree = protocol.newTree(directories.get(directories.size() - 1), directories);
         byte[] treeData = protocol.toByteArray(tree);
         Digest treeDigest = protocol.computeDigest(treeData);
@@ -184,9 +191,8 @@ public class ActionRunner {
         boolean isExecutable = Files.isExecutable(path);
         Digest digest = protocol.newDigest(hashFile(path).toString(), (int) size);
 
-        ThrowingSupplier<InputStream, IOException> dataSupplier =
-            () -> new FileInputStream(path.toFile());
-        outputFilesBuilder.add(protocol.newOutputFile(output, digest, isExecutable, dataSupplier));
+        UploadDataSupplier dataSupplier = () -> new FileInputStream(path.toFile());
+        outputFilesBuilder.add(protocol.newOutputFile(output, digest, isExecutable));
         requiredDataBuilder.put(digest, dataSupplier);
       }
     }

@@ -32,7 +32,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.hash.HashCode;
-import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -108,6 +107,11 @@ public class FakeJavaLibrary extends FakeBuildRule implements JavaLibrary, Andro
     return ImmutableSortedSet.of();
   }
 
+  @Override
+  public Optional<String> getResourcesRoot() {
+    return Optional.empty();
+  }
+
   public FakeJavaLibrary setJavaSrcs(ImmutableSortedSet<SourcePath> srcs) {
     Objects.requireNonNull(srcs);
     this.srcs = srcs;
@@ -115,8 +119,13 @@ public class FakeJavaLibrary extends FakeBuildRule implements JavaLibrary, Andro
   }
 
   @Override
-  public Optional<Path> getGeneratedSourcePath() {
+  public Optional<SourcePath> getGeneratedAnnotationSourcePath() {
     return Optional.empty();
+  }
+
+  @Override
+  public boolean hasAnnotationProcessing() {
+    return false;
   }
 
   @Override

@@ -16,12 +16,7 @@
 
 package com.facebook.buck.rules.modern.builders;
 
-import com.facebook.buck.remoteexecution.util.FileTreeBuilder;
-import com.facebook.buck.remoteexecution.util.FileTreeBuilder.InputFile;
-import com.facebook.buck.util.function.ThrowingFunction;
 import com.google.common.base.Preconditions;
-import com.google.common.hash.HashCode;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +24,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
 
 /**
  * Used to add "complex" inputs to a FileTreeBuilder.
@@ -38,25 +36,27 @@ import java.util.Set;
  * appropriate calls on the underlying FileTreeBuilder.
  */
 class FileInputsAdder {
+  /** Interface for consuming the found inputs and for accessing some filesystem information. */
+  interface Delegate {
+    void addFile(Path path) throws IOException;
+
+    void addSymlink(Path symlink, Path fixedTarget);
+
+    @Nullable
+    Iterable<Path> getDirectoryContents(Path target) throws IOException;
+
+    @Nullable
+    Path getSymlinkTarget(Path path) throws IOException;
+  }
+
   private final Set<Path> addedInputs = new HashSet<>();
   private final Map<Path, Path> map = new HashMap<>();
-  private final FileTreeBuilder inputsBuilder;
+  private final Delegate delegate;
   private final Path cellPathPrefix;
-  private final ThrowingFunction<Path, HashCode, IOException> fileHasher;
-  private final ThrowingFunction<Path, Iterable<Path>, IOException> directoryLister;
-  private final ThrowingFunction<Path, Path, IOException> symlinkReader;
 
-  FileInputsAdder(
-      FileTreeBuilder inputsBuilder,
-      Path cellPathPrefix,
-      ThrowingFunction<Path, HashCode, IOException> fileHasher,
-      ThrowingFunction<Path, Iterable<Path>, IOException> directoryLister,
-      ThrowingFunction<Path, Path, IOException> symlinkReader) {
-    this.inputsBuilder = inputsBuilder;
+  FileInputsAdder(Delegate delegate, Path cellPathPrefix) {
+    this.delegate = delegate;
     this.cellPathPrefix = cellPathPrefix;
-    this.fileHasher = fileHasher;
-    this.directoryLister = directoryLister;
-    this.symlinkReader = symlinkReader;
   }
 
   /**
@@ -80,7 +80,7 @@ class FileInputsAdder {
     Path target = addSingleInput(path);
 
     if (target.startsWith(cellPathPrefix)) {
-      Iterable<Path> children = directoryLister.apply(target);
+      Iterable<Path> children = delegate.getDirectoryContents(target);
       if (children != null) {
         for (Path child : children) {
           addInput(child);
@@ -101,10 +101,11 @@ class FileInputsAdder {
    * FileTreeBuilder.
    */
   private Path addSingleInput(Path path) throws IOException {
-    Preconditions.checkState(path.normalize().equals(path));
     if (map.containsKey(path)) {
       return map.get(path);
     }
+
+    Preconditions.checkArgument(path.normalize().equals(path));
 
     if (!path.startsWith(cellPathPrefix)) {
       map.put(path, path);
@@ -123,7 +124,7 @@ class FileInputsAdder {
       return target;
     }
 
-    Path symlinkTarget = symlinkReader.apply(path);
+    Path symlinkTarget = delegate.getSymlinkTarget(path);
     if (symlinkTarget != null) {
       Path resolvedTarget = path.getParent().resolve(symlinkTarget).normalize();
 
@@ -132,7 +133,7 @@ class FileInputsAdder {
       if (contained) {
         fixedTarget = parent.relativize(resolvedTarget);
       }
-      inputsBuilder.addSymlink(cellPathPrefix.relativize(path), fixedTarget);
+      delegate.addSymlink(path, fixedTarget);
 
       Path target = contained ? addSingleInput(resolvedTarget) : resolvedTarget;
       map.put(path, target);
@@ -140,16 +141,30 @@ class FileInputsAdder {
     }
 
     if (Files.isRegularFile(path)) {
-      inputsBuilder.addFile(
-          cellPathPrefix.relativize(path),
-          () ->
-              new InputFile(
-                  fileHasher.apply(path).toString(),
-                  (int) Files.size(path),
-                  Files.isExecutable(path),
-                  () -> new FileInputStream(path.toFile())));
+      delegate.addFile(path);
     }
     map.put(path, path);
     return path;
+  }
+
+  /**
+   * A simple base delegate implementation when nothing special needs to be done for the filesystem
+   * operations.
+   */
+  public abstract static class AbstractDelegate implements Delegate {
+    @Override
+    public Iterable<Path> getDirectoryContents(Path target) throws IOException {
+      if (!Files.isDirectory(target)) {
+        return null;
+      }
+      try (Stream<Path> listing = Files.list(target)) {
+        return listing.collect(Collectors.toList());
+      }
+    }
+
+    @Override
+    public Path getSymlinkTarget(Path path) throws IOException {
+      return Files.isSymbolicLink(path) ? Files.readSymbolicLink(path) : null;
+    }
   }
 }

@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+# Copyright 2018-present Facebook, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
 
 from __future__ import print_function
 
@@ -24,10 +38,10 @@ if not zipfile.is_zipfile(sys.argv[0]):
     append_sys_path(os.sep.join(__file__.split(os.sep)[:-4]))
     append_sys_path(os.sep.join(__file__.split(os.sep)[:-7]))
 
-import pkg_resources  # noqa
+import pkg_resources  # noqa isort:skip
 
-from pex.interpreter import PythonIdentity, PythonInterpreter  # noqa
-from pex.pex_builder import PEXBuilder  # noqa
+from pex.interpreter import PythonIdentity, PythonInterpreter  # noqa isort:skip
+from pex.pex_builder import PEXBuilder  # noqa isort:skip
 
 
 def dereference_symlinks(src):

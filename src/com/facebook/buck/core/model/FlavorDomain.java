@@ -23,12 +23,14 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import java.util.AbstractMap;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** Provides a named flavor abstraction on top of boolean flavors. */
@@ -58,6 +60,34 @@ public class FlavorDomain<T> {
     return !Sets.intersection(translation.keySet(), flavors).isEmpty();
   }
 
+  /**
+   * Provides a convenience function to map the values of the domain (retaining the current name).
+   */
+  public <U> FlavorDomain<U> map(Function<? super T, U> mapper) {
+    return map(name, mapper);
+  }
+
+  /** Provides a convenience function to map the values of the domain. */
+  public <U> FlavorDomain<U> map(String name, Function<? super T, U> mapper) {
+    return new FlavorDomain<>(
+        name, ImmutableMap.copyOf(Maps.transformValues(translation, mapper::apply)));
+  }
+
+  /**
+   * Provides a convenience for converting from one domain to another. This is similar to map(), but
+   * the new domain has flavors derived from the mapped to {@link FlavorConvertible}.
+   */
+  public <U extends FlavorConvertible> FlavorDomain<U> convert(
+      String name, Function<? super T, U> mapper) {
+    return new FlavorDomain<>(
+        name,
+        translation
+            .values()
+            .stream()
+            .map(mapper)
+            .collect(ImmutableMap.toImmutableMap(FlavorConvertible::getFlavor, v -> v)));
+  }
+
   public boolean contains(Flavor flavor) {
     return translation.containsKey(flavor);
   }
@@ -83,12 +113,8 @@ public class FlavorDomain<T> {
 
   public Optional<Map.Entry<Flavor, T>> getFlavorAndValue(Set<Flavor> flavors) {
     Optional<Flavor> flavor = getFlavor(flavors);
-    if (!flavor.isPresent()) {
-      return Optional.empty();
-    }
-
-    return Optional.of(
-        new AbstractMap.SimpleImmutableEntry<>(flavor.get(), translation.get(flavor.get())));
+    return flavor.map(
+        theFlavor -> new AbstractMap.SimpleImmutableEntry<>(theFlavor, translation.get(theFlavor)));
   }
 
   public Optional<Map.Entry<Flavor, T>> getFlavorAndValue(BuildTarget buildTarget) {

@@ -35,17 +35,19 @@ import com.facebook.buck.core.rules.platform.ThrowingConstraintResolver;
 import com.facebook.buck.core.select.TestSelectableResolver;
 import com.facebook.buck.core.select.impl.DefaultSelectorListResolver;
 import com.facebook.buck.core.sourcepath.PathSourcePath;
-import com.facebook.buck.core.sourcepath.SourcePath;
 import com.facebook.buck.event.SimplePerfEvent;
+import com.facebook.buck.io.filesystem.impl.FakeProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaLibraryDescription;
 import com.facebook.buck.jvm.java.JavaLibraryDescriptionArg;
-import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
+import com.facebook.buck.rules.coercer.DefaultConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Sets;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
 import org.junit.Test;
@@ -54,16 +56,22 @@ public class RawTargetNodeToTargetNodeFactoryTest {
 
   @Test
   public void testTargetNodeCreatedWithAttributes() {
-
     BuildTarget buildTarget = BuildTargetFactory.newInstance("//a/b:c");
-    Cell cell = new TestCellBuilder().build();
-    SourcePath path1 = PathSourcePath.of(cell.getFilesystem(), Paths.get("src1"));
-    SourcePath path2 = PathSourcePath.of(cell.getFilesystem(), Paths.get("src2"));
+    Path basepath = Paths.get("a").resolve("b");
+    Cell cell =
+        new TestCellBuilder()
+            .setFilesystem(
+                new FakeProjectFilesystem(
+                    Sets.newHashSet(
+                        basepath.resolve("src1"),
+                        basepath.resolve("src2"),
+                        basepath.resolve("BUCK"))))
+            .build();
     RawAttributes attributes =
         new RawAttributes(
             ImmutableMap.<String, Object>builder()
                 .put("name", "c")
-                .put("srcs", ImmutableList.of(path1, path2))
+                .put("srcs", ImmutableList.of("src1", "src2"))
                 .build());
     RawTargetNode node =
         ImmutableRawTargetNode.of(
@@ -76,7 +84,7 @@ public class RawTargetNodeToTargetNodeFactoryTest {
     RawTargetNodeToTargetNodeFactory factory =
         new RawTargetNodeToTargetNodeFactory(
             TestKnownRuleTypesProvider.create(BuckPluginManagerFactory.createPluginManager()),
-            new ConstructorArgMarshaller(typeCoercerFactory),
+            new DefaultConstructorArgMarshaller(typeCoercerFactory),
             new TargetNodeFactory(typeCoercerFactory),
             new NoopPackageBoundaryChecker(),
             (file, targetNode) -> {},
@@ -96,8 +104,8 @@ public class RawTargetNodeToTargetNodeFactoryTest {
     JavaLibraryDescriptionArg arg = (JavaLibraryDescriptionArg) targetNode.getConstructorArg();
     assertEquals(
         ImmutableSortedSet.of(
-            PathSourcePath.of(cell.getFilesystem(), Paths.get("src1")),
-            PathSourcePath.of(cell.getFilesystem(), Paths.get("src2"))),
+            PathSourcePath.of(cell.getFilesystem(), basepath.resolve("src1")),
+            PathSourcePath.of(cell.getFilesystem(), basepath.resolve("src2"))),
         arg.getSrcs());
   }
 }

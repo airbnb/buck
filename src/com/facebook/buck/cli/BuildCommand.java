@@ -31,6 +31,8 @@ import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.model.actiongraph.ActionGraphAndBuilder;
 import com.facebook.buck.core.model.graph.ActionAndTargetGraphs;
 import com.facebook.buck.core.model.targetgraph.TargetGraphAndBuildTargets;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetParser;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.rulekey.RuleKey;
 import com.facebook.buck.core.rulekey.calculator.ParallelRuleKeyCalculator;
 import com.facebook.buck.core.rules.ActionGraphBuilder;
@@ -46,8 +48,6 @@ import com.facebook.buck.event.BuckEventListener;
 import com.facebook.buck.io.file.MostFiles;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.thrift.ThriftRuleKeyLogger;
-import com.facebook.buck.parser.BuildTargetParser;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.parser.ParserConfig;
 import com.facebook.buck.parser.exceptions.BuildTargetException;
 import com.facebook.buck.rules.keys.DefaultRuleKeyFactory;
@@ -320,8 +320,7 @@ public class BuildCommand extends AbstractCommand {
       SettableFuture.create();
 
   @Override
-  public ExitCode runWithoutHelp(CommandRunnerParams params)
-      throws IOException, InterruptedException {
+  public ExitCode runWithoutHelp(CommandRunnerParams params) throws Exception {
     assertArguments(params);
 
     ListeningProcessExecutor processExecutor = new ListeningProcessExecutor();
@@ -363,7 +362,7 @@ public class BuildCommand extends AbstractCommand {
       CommandRunnerParams params,
       CommandThreadManager commandThreadManager,
       ImmutableSet<String> additionalTargets)
-      throws IOException, InterruptedException {
+      throws Exception {
     if (!additionalTargets.isEmpty()) {
       this.arguments.addAll(additionalTargets);
     }
@@ -440,8 +439,7 @@ public class BuildCommand extends AbstractCommand {
   }
 
   private BuildRunResult executeBuildAndProcessResult(
-      CommandRunnerParams params, CommandThreadManager commandThreadManager)
-      throws IOException, InterruptedException, ActionGraphCreationException {
+      CommandRunnerParams params, CommandThreadManager commandThreadManager) throws Exception {
     ExitCode exitCode = ExitCode.SUCCESS;
     GraphsAndBuildTargets graphsAndBuildTargets;
     if (isUsingDistributedBuild()) {
@@ -661,12 +659,13 @@ public class BuildCommand extends AbstractCommand {
     try {
       return params
           .getParser()
-          .buildTargetGraphForTargetNodeSpecs(
+          .buildTargetGraphWithoutConfigurationTargets(
               params.getCell(),
               getEnableParserProfiling(),
               executor,
               parseArgumentsAsTargetNodeSpecs(
                   params.getCell().getCellPathResolver(), params.getBuckConfig(), getArguments()),
+              getExcludeIncompatibleTargets(),
               parserConfig.getDefaultFlavorsMode());
     } catch (BuildTargetException e) {
       throw new ActionGraphCreationException(MoreExceptions.getHumanReadableOrLocalizedMessage(e));
@@ -723,7 +722,7 @@ public class BuildCommand extends AbstractCommand {
       Optional<CountDownLatch> initializeBuildLatch,
       RuleKeyCacheScope<RuleKey> ruleKeyCacheScope,
       AtomicReference<Build> buildReference)
-      throws IOException, InterruptedException {
+      throws Exception {
 
     ActionGraphAndBuilder actionGraphAndBuilder =
         graphsAndBuildTargets.getGraphs().getActionGraphAndBuilder();
@@ -741,24 +740,28 @@ public class BuildCommand extends AbstractCommand {
             getBuildEngineMode(),
             ruleKeyLogger,
             remoteBuildRuleCompletionWaiter,
-            params.getTraceInfoProvider());
-    buildReference.set(builder.getBuild());
-    // TODO(alisdair): ensure that all Stampede local builds re-use same calculator
-    localRuleKeyCalculator.set(builder.getCachingBuildEngine().getRuleKeyCalculator());
+            params.getMetadataProvider());
 
-    if (initializeBuildLatch.isPresent()) {
-      // Signal to other threads that lastBuild has now been set.
-      initializeBuildLatch.get().countDown();
+    // TODO(buck_team): use try-with-resources instead
+    try {
+      buildReference.set(builder.getBuild());
+      // TODO(alisdair): ensure that all Stampede local builds re-use same calculator
+      localRuleKeyCalculator.set(builder.getCachingBuildEngine().getRuleKeyCalculator());
+
+      if (initializeBuildLatch.isPresent()) {
+        // Signal to other threads that lastBuild has now been set.
+        initializeBuildLatch.get().countDown();
+      }
+
+      Iterable<BuildTarget> targets =
+          FluentIterable.concat(
+              graphsAndBuildTargets.getBuildTargets(),
+              getAdditionalTargetsToBuild(graphsAndBuildTargets));
+
+      return builder.buildTargets(targets, getPathToBuildReport(params.getBuckConfig()));
+    } finally {
+      builder.shutdown();
     }
-
-    Iterable<BuildTarget> targets =
-        FluentIterable.concat(
-            graphsAndBuildTargets.getBuildTargets(),
-            getAdditionalTargetsToBuild(graphsAndBuildTargets));
-
-    ExitCode code = builder.buildTargets(targets, getPathToBuildReport(params.getBuckConfig()));
-    builder.shutdown();
-    return code;
   }
 
   RuleKeyCacheScope<RuleKey> getDefaultRuleKeyCacheScope(

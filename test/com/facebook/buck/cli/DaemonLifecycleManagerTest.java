@@ -51,6 +51,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -65,19 +66,20 @@ public class DaemonLifecycleManagerTest {
   private KnownRuleTypesProvider knownRuleTypesProvider;
   private BuckConfig buckConfig;
   private Clock clock;
+  private PluginManager pluginManager;
 
   @Before
-  public void setUp() throws InterruptedException {
+  public void setUp() {
     filesystem = TestProjectFilesystems.createProjectFilesystem(tmp.getRoot());
     buckConfig = FakeBuckConfig.builder().build();
     daemonLifecycleManager = new DaemonLifecycleManager();
-    PluginManager pluginManager = BuckPluginManagerFactory.createPluginManager();
+    pluginManager = BuckPluginManagerFactory.createPluginManager();
     knownRuleTypesProvider = TestKnownRuleTypesProvider.create(pluginManager);
     clock = FakeClock.doNotCare();
   }
 
   @Test
-  public void whenBuckConfigChangesParserInvalidated() throws IOException {
+  public void whenBuckConfigChangesParserInvalidated() {
     Object daemon =
         daemonLifecycleManager.getDaemon(
             new TestCellBuilder()
@@ -92,7 +94,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals(
         "Daemon should not be replaced when config equal.",
@@ -110,7 +113,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock));
+            clock,
+            Optional::empty));
 
     assertNotEquals(
         "Daemon should be replaced when config not equal.",
@@ -128,11 +132,12 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock));
+            clock,
+            Optional::empty));
   }
 
   @Test
-  public void whenAndroidNdkVersionChangesParserInvalidated() throws IOException {
+  public void whenAndroidNdkVersionChangesParserInvalidated() {
 
     BuckConfig buckConfig1 =
         FakeBuckConfig.builder()
@@ -150,7 +155,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertNotEquals(
         "Daemon should be replaced when not equal.",
@@ -160,7 +166,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock));
+            clock,
+            Optional::empty));
   }
 
   @Test
@@ -176,7 +183,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     Object daemon2 =
         daemonLifecycleManager.getDaemon(
@@ -184,7 +192,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     assertEquals("Apple SDK should still be not found", daemon1, daemon2);
 
     Path appleDeveloperDirectoryPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -204,7 +213,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     assertNotEquals("Apple SDK should be found", daemon2, daemon3);
 
     Object daemon4 =
@@ -216,12 +226,13 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     assertEquals("Apple SDK should still be found", daemon3, daemon4);
   }
 
   @Test
-  public void testAndroidSdkChangesParserInvalidated() throws IOException, InterruptedException {
+  public void testAndroidSdkChangesParserInvalidated() throws IOException {
     // Disable the test on Windows for now since it's failing to find python.
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
@@ -254,14 +265,16 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     Object daemon2 =
         daemonLifecycleManager.getDaemon(
             new TestCellBuilder().setBuckConfig(buckConfig).setFilesystem(filesystem).build(),
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     assertEquals("Android SDK should be the same initial location", daemon1, daemon2);
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -274,7 +287,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals("Daemon should not be re-created", daemon2, daemon3);
     Object daemon4 =
@@ -283,14 +297,14 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals("Android SDK should be the same other location", daemon3, daemon4);
   }
 
   @Test
-  public void testAndroidSdkChangesParserInvalidatedWhenToolchainsPresent()
-      throws IOException, InterruptedException {
+  public void testAndroidSdkChangesParserInvalidatedWhenToolchainsPresent() throws IOException {
     // Disable the test on Windows for now since it's failing to find python.
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
@@ -323,14 +337,16 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     Object daemon2 =
         daemonLifecycleManager.getDaemon(
             new TestCellBuilder().setBuckConfig(buckConfig).setFilesystem(filesystem).build(),
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
     assertEquals("Android SDK should be the same initial location", daemon1, daemon2);
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -344,7 +360,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertNotEquals("Android SDK should be the other location", daemon2, daemon3);
     Object daemon4 =
@@ -353,7 +370,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals("Android SDK should be the same other location", daemon3, daemon4);
   }
@@ -368,8 +386,7 @@ public class DaemonLifecycleManagerTest {
   }
 
   @Test
-  public void testParserInvalidatedWhenToolchainFailsToCreateFirstTime()
-      throws IOException, InterruptedException {
+  public void testParserInvalidatedWhenToolchainFailsToCreateFirstTime() throws IOException {
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -384,7 +401,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     tmp.newFolder("android-sdk");
 
@@ -395,14 +413,15 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertNotEquals(daemonWithBrokenAndroidSdk, daemonWithWorkingAndroidSdk);
   }
 
   @Test
   public void testParserInvalidatedWhenToolchainFailsToCreateAfterFirstCreation()
-      throws IOException, InterruptedException {
+      throws IOException {
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -416,7 +435,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     Files.deleteIfExists(androidSdkPath);
 
@@ -427,14 +447,14 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertNotEquals(daemonWithWorkingAndroidSdk, daemonWithBrokenAndroidSdk);
   }
 
   @Test
-  public void testParserNotInvalidatedWhenToolchainFailsWithTheSameProblem()
-      throws IOException, InterruptedException {
+  public void testParserNotInvalidatedWhenToolchainFailsWithTheSameProblem() throws IOException {
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -449,7 +469,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     cell = createCellWithAndroidSdk(androidSdkPath);
     cell.getToolchainProvider()
@@ -460,14 +481,15 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals(daemonWithBrokenAndroidSdk1, daemonWithBrokenAndroidSdk2);
   }
 
   @Test
   public void testParserNotInvalidatedWhenToolchainFailsWithTheSameProblemButNotInstantiated()
-      throws IOException, InterruptedException {
+      throws IOException {
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -482,7 +504,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     cell = createCellWithAndroidSdk(androidSdkPath);
     Daemon daemonWithBrokenAndroidSdk2 =
@@ -491,14 +514,14 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals(daemonWithBrokenAndroidSdk1, daemonWithBrokenAndroidSdk2);
   }
 
   @Test
-  public void testParserInvalidatedWhenToolchainFailsWithDifferentProblem()
-      throws IOException, InterruptedException {
+  public void testParserInvalidatedWhenToolchainFailsWithDifferentProblem() throws IOException {
     assumeThat(Platform.detect(), not(Platform.WINDOWS));
 
     Path androidSdkPath = tmp.newFolder("android-sdk").toAbsolutePath();
@@ -513,7 +536,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     cell = createCellWithAndroidSdk(androidSdkPath.resolve("some-other-dir"));
     Object daemonWithBrokenAndroidSdk2 =
@@ -522,7 +546,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertNotEquals(daemonWithBrokenAndroidSdk1, daemonWithBrokenAndroidSdk2);
   }
@@ -537,7 +562,8 @@ public class DaemonLifecycleManagerTest {
             knownRuleTypesProvider,
             WatchmanFactory.NULL_WATCHMAN,
             Console.createNullConsole(),
-            clock);
+            clock,
+            Optional::empty);
 
     assertEquals(daemon.getUptime(), 0);
     clock.setCurrentTimeMillis(2000);

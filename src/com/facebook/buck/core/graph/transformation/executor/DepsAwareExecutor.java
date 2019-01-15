@@ -17,9 +17,9 @@
 package com.facebook.buck.core.graph.transformation.executor;
 
 import com.facebook.buck.util.function.ThrowingSupplier;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import java.util.Collection;
-import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.Supplier;
@@ -40,23 +40,24 @@ import java.util.function.Supplier;
  * synchronization between different instances of {@link DepsAwareTask} other than that its
  * dependencies will be completed before the callable is evaluated.
  */
-public interface DepsAwareExecutor<
-    ResultType, TaskType extends DepsAwareTask<ResultType, TaskType>> {
+public interface DepsAwareExecutor<ResultType, TaskType extends DepsAwareTask<ResultType, TaskType>>
+    extends AutoCloseable {
 
   /**
    * Shuts down the executor workers immediately. This does not shutdown the underlying executor
    * backing the {@link DepsAwareExecutor}
    */
-  void shutdownNow();
+  @Override
+  void close();
 
-  /** @return true iff {@link #shutdownNow()} has been called */
+  /** @return true iff {@link #close()} has been called */
   boolean isShutdown();
 
   /** @return a new {@link DepsAwareTask} that can be executed in this executor */
   TaskType createTask(Callable<ResultType> callable, Supplier<ImmutableSet<TaskType>> depsSupplier);
 
-  /** @see #createTask(Callable, Supplier) */
-  TaskType createTask(
+  /** @see #createTask(Callable, Supplier) but with a {@link ThrowingSupplier} instead */
+  TaskType createThrowingTask(
       Callable<ResultType> callable,
       ThrowingSupplier<ImmutableSet<TaskType>, Exception> depsSupplier);
 
@@ -70,5 +71,5 @@ public interface DepsAwareExecutor<
   Future<ResultType> submit(TaskType task);
 
   /** Same as {@link #submit(DepsAwareTask)} except for multiple tasks. */
-  List<Future<ResultType>> submitAll(Collection<TaskType> tasks);
+  ImmutableList<Future<ResultType>> submitAll(Collection<TaskType> tasks);
 }

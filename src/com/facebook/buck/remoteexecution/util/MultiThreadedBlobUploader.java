@@ -20,8 +20,8 @@ import com.facebook.buck.remoteexecution.CasBlobUploader;
 import com.facebook.buck.remoteexecution.CasBlobUploader.UploadData;
 import com.facebook.buck.remoteexecution.CasBlobUploader.UploadResult;
 import com.facebook.buck.remoteexecution.Protocol.Digest;
+import com.facebook.buck.remoteexecution.UploadDataSupplier;
 import com.facebook.buck.util.concurrent.MoreFutures;
-import com.facebook.buck.util.function.ThrowingSupplier;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -31,14 +31,12 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
@@ -94,24 +92,17 @@ public class MultiThreadedBlobUploader {
   }
 
   /** Uploads missing items to the CAS. */
-  public void addMissing(ImmutableMap<Digest, ThrowingSupplier<InputStream, IOException>> data)
-      throws IOException {
-    try {
-      data =
-          ImmutableMap.copyOf(Maps.filterKeys(data, k -> !containedHashes.contains(k.getHash())));
-      if (data.isEmpty()) {
-        return;
-      }
-      enqueue(data).get();
-    } catch (InterruptedException | ExecutionException e) {
-      throw new IOException(e);
+  public ListenableFuture<Void> addMissing(ImmutableMap<Digest, UploadDataSupplier> data) {
+    data = ImmutableMap.copyOf(Maps.filterKeys(data, k -> !containedHashes.contains(k.getHash())));
+    if (data.isEmpty()) {
+      return Futures.immediateFuture(null);
     }
+    return enqueue(data);
   }
 
-  private ListenableFuture<Void> enqueue(
-      ImmutableMap<Digest, ThrowingSupplier<InputStream, IOException>> data) {
+  private ListenableFuture<Void> enqueue(ImmutableMap<Digest, UploadDataSupplier> data) {
     ImmutableList.Builder<ListenableFuture<Void>> futures = ImmutableList.builder();
-    for (Entry<Digest, ThrowingSupplier<InputStream, IOException>> entry : data.entrySet()) {
+    for (Entry<Digest, UploadDataSupplier> entry : data.entrySet()) {
       Digest digest = entry.getKey();
       ListenableFuture<Void> resultFuture =
           pendingUploads.computeIfAbsent(
@@ -209,7 +200,9 @@ public class MultiThreadedBlobUploader {
               } else {
                 pendingUpload.future.setException(
                     new IOException(
-                        String.format("Failed uploading with message: %s", result.message)));
+                        String.format(
+                            "Failed uploading with message: %s. When uploading blob: %s.",
+                            result.message, pendingUpload.uploadData.data.describe())));
               }
             });
         data.forEach((k, pending) -> pending.future.setException(new RuntimeException("idk")));

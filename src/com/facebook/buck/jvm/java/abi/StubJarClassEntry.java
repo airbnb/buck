@@ -39,7 +39,7 @@ class StubJarClassEntry extends StubJarEntry {
   public static StubJarClassEntry of(
       LibraryReader input, Path path, @Nullable AbiGenerationMode compatibilityMode)
       throws IOException {
-    ClassNode stub = new ClassNode(Opcodes.ASM6);
+    ClassNode stub = new ClassNode(Opcodes.ASM7);
 
     // As we read the class in, we create a partial stub that removes non-ABI methods and fields
     // but leaves the entire InnerClasses table. We record all classes that are referenced from
@@ -71,7 +71,7 @@ class StubJarClassEntry extends StubJarEntry {
   }
 
   @Override
-  public void write(StubJarWriter writer) throws IOException {
+  public void write(StubJarWriter writer) {
     writer.writeEntry(path, this::openInputStream);
   }
 
@@ -121,15 +121,21 @@ class StubJarClassEntry extends StubJarEntry {
   private static class InnerClassSortingClassVisitor extends ClassVisitor {
     private final String className;
     private final List<InnerClassNode> innerClasses = new ArrayList<>();
+    private final List<String> nestMembers = new ArrayList<>();
 
     private InnerClassSortingClassVisitor(String className, ClassVisitor cv) {
-      super(Opcodes.ASM6, cv);
+      super(Opcodes.ASM7, cv);
       this.className = className;
     }
 
     @Override
     public void visitInnerClass(String name, String outerName, String innerName, int access) {
       innerClasses.add(new InnerClassNode(name, outerName, innerName, access));
+    }
+
+    @Override
+    public void visitNestMember(String nestMember) {
+      nestMembers.add(nestMember);
     }
 
     @Override
@@ -155,6 +161,8 @@ class StubJarClassEntry extends StubJarEntry {
       for (InnerClassNode innerClass : innerClasses) {
         innerClass.accept(cv);
       }
+
+      nestMembers.stream().sorted().forEach(nestMember -> cv.visitNestMember(nestMember));
 
       super.visitEnd();
     }

@@ -17,10 +17,10 @@
 package com.facebook.buck.parser.cache.impl;
 
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.util.cache.FileHashCache;
 import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.environment.Architecture;
 import com.facebook.buck.util.environment.Platform;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hasher;
@@ -75,35 +75,26 @@ public final class Fingerprinter {
         .hash();
   }
 
-  private static void addContentHash(ProjectFilesystem fs, Path filePath, Hasher hasher)
-      throws IOException {
-    hasher.putString(fs.computeSha256(filePath), StandardCharsets.UTF_8);
-  }
-
-  private static void addIncludeEntryToFingerprint(
-      ProjectFilesystem fs, Hasher hasher, String value) throws IOException {
-    Path includePath = fs.getPath(value);
-    hasher.putString(fs.relativize(includePath).toString(), StandardCharsets.UTF_8);
-    addContentHash(fs, includePath, hasher);
-  }
-
   /**
    * Calculates a strong fingerprint.
    *
-   * @param fs the {@Link ProjectFilesystem} that we use to calculate the strong fingerprint.
+   * @param fs the {@link ProjectFilesystem} that we use to calculate the strong fingerprint.
    * @param includes the list of included build files for which we calculate the strong fingerprint.
-   * @return a strong fingerprint - {@Link HashCode} that represent a unique hash value.
+   * @param fileHashCache the {@link FileHashCache} object to use to get the content hash of the
+   *     loaded files.
+   * @return a strong fingerprint - {@link HashCode} that represent a unique hash value.
    * @throws IOException can throw if there is a problem getting the content of the main BUCK build
    *     spec or an included file.
    */
-  public static HashCode getStrongFingerprint(ProjectFilesystem fs, ImmutableList<String> includes)
+  public static HashCode getStrongFingerprint(
+      ProjectFilesystem fs, ImmutableSortedSet<String> includes, FileHashCache fileHashCache)
       throws IOException {
     Hasher hasher = Hashing.sha256().newHasher();
 
-    // Now add the loaded paths.
-    ImmutableSortedSet<String> sortedIncludes = ImmutableSortedSet.copyOf(includes);
-    for (String value : sortedIncludes) {
-      addIncludeEntryToFingerprint(fs, hasher, value);
+    for (String value : includes) {
+      Path value_path = fs.getPath(value);
+      hasher.putString(fs.relativize(value_path).toString(), StandardCharsets.UTF_8);
+      hasher.putBytes(fileHashCache.get(value_path).asBytes());
     }
 
     return hasher.hash();

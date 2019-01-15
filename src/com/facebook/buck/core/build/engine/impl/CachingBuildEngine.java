@@ -48,6 +48,7 @@ import com.facebook.buck.core.rules.attr.HasRuntimeDeps;
 import com.facebook.buck.core.rules.build.strategy.BuildRuleStrategy;
 import com.facebook.buck.core.sourcepath.resolver.SourcePathResolver;
 import com.facebook.buck.event.BuckEventBus;
+import com.facebook.buck.manifestservice.ManifestService;
 import com.facebook.buck.rules.keys.RuleKeyDiagnostics;
 import com.facebook.buck.rules.keys.RuleKeyFactories;
 import com.facebook.buck.rules.keys.hasher.StringRuleKeyHasher;
@@ -69,14 +70,18 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
@@ -111,7 +116,9 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
   private final ConcurrentMap<BuildTarget, ListenableFuture<BuildResult>> results =
       Maps.newConcurrentMap();
 
-  @Nullable private volatile Throwable firstFailure = null;
+  private final AtomicReference<Throwable> firstFailure = new AtomicReference<>();
+  private final ConcurrentLinkedQueue<WeakReference<CachingBuildRuleBuilder>> ruleBuilders =
+      new ConcurrentLinkedQueue<>();
 
   private final CachingBuildEngineDelegate cachingBuildEngineDelegate;
 
@@ -144,6 +151,8 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
 
   private final Optional<BuildRuleStrategy> customBuildRuleStrategy;
 
+  private final Optional<ManifestService> manifestService;
+
   public CachingBuildEngine(
       CachingBuildEngineDelegate cachingBuildEngineDelegate,
       Optional<BuildRuleStrategy> customBuildRuleStrategy,
@@ -161,7 +170,8 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
       ResourceAwareSchedulingInfo resourceAwareSchedulingInfo,
       boolean consoleLogBuildFailuresInline,
       RuleKeyFactories ruleKeyFactories,
-      RemoteBuildRuleCompletionWaiter remoteBuildRuleCompletionWaiter) {
+      RemoteBuildRuleCompletionWaiter remoteBuildRuleCompletionWaiter,
+      Optional<ManifestService> manifestService) {
     this(
         cachingBuildEngineDelegate,
         customBuildRuleStrategy,
@@ -188,7 +198,8 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
                 ruleKeyFactories
                     .getDefaultRuleKeyFactory()
                     .buildForDiagnostics(appendable, new StringRuleKeyHasher())),
-        consoleLogBuildFailuresInline);
+        consoleLogBuildFailuresInline,
+        manifestService);
   }
 
   /** This constructor MUST ONLY BE USED FOR TESTS. */
@@ -211,10 +222,12 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
       RemoteBuildRuleCompletionWaiter remoteBuildRuleCompletionWaiter,
       ResourceAwareSchedulingInfo resourceAwareSchedulingInfo,
       RuleKeyDiagnostics<RuleKey, String> defaultRuleKeyDiagnostics,
-      boolean consoleLogBuildFailuresInline) {
+      boolean consoleLogBuildFailuresInline,
+      Optional<ManifestService> manifestService) {
     this.cachingBuildEngineDelegate = cachingBuildEngineDelegate;
     this.customBuildRuleStrategy = customBuildRuleStrategy;
 
+    this.manifestService = manifestService;
     this.service = service;
     this.stepRunner = stepRunner;
     this.buildMode = buildMode;
@@ -256,6 +269,7 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
       if (customBuildRuleStrategy.isPresent()) {
         customBuildRuleStrategy.get().close();
       }
+      terminateBuildWithFailure(new CancellationException("Cancelling due to engine shutdown."));
       Futures.allAsList(asyncCallbacks).get();
     } catch (InterruptedException e) {
       e.printStackTrace();
@@ -304,7 +318,21 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
 
   @Override
   public void terminateBuildWithFailure(Throwable failure) {
-    firstFailure = failure;
+    // TODO(cjhopman): Change this to only accept specific exception types to enforce that we get
+    // the information that we want.
+    if (firstFailure.compareAndSet(null, failure)) {
+      forEachPendingBuilder(builder -> builder.cancel(failure));
+    }
+  }
+
+  private void forEachPendingBuilder(Consumer<CachingBuildRuleBuilder> action) {
+    for (WeakReference<CachingBuildRuleBuilder> value : ruleBuilders) {
+      CachingBuildRuleBuilder builder = value.get();
+      if (builder == null) {
+        continue;
+      }
+      action.accept(builder);
+    }
   }
 
   // Dispatch and return a future resolving to a list of all results of this rules dependencies.
@@ -372,10 +400,17 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     ListenableFuture<BuildResult> chainedResult =
         Futures.transformAsync(
             Futures.allAsList(runtimeDepResults),
-            results ->
-                !buildContext.isKeepGoing() && firstFailure != null
-                    ? Futures.immediateFuture(BuildResult.canceled(rule, firstFailure))
-                    : result,
+            results -> {
+              if (!isKeepGoingEnabled(buildContext)) {
+                for (BuildResult buildResult : results) {
+                  if (!buildResult.isSuccess()) {
+                    return Futures.immediateFuture(
+                        BuildResult.canceled(rule, buildResult.getFailure()));
+                  }
+                }
+              }
+              return result;
+            },
             MoreExecutors.directExecutor());
     results.put(rule.getBuildTarget(), chainedResult);
     return chainedResult;
@@ -452,19 +487,8 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     return result.get();
   }
 
-  private boolean shouldKeepGoing(BuildEngineBuildContext buildContext) {
-    boolean keepGoing =
-        firstFailure == null
-            || buildMode == BuildType.POPULATE_FROM_REMOTE_CACHE
-            || buildContext.isKeepGoing();
-
-    if (!keepGoing) {
-      // Ensure any pending/future cache fetch requests are not processed.
-      // Note: these are processed on a different Executor from the one used by the build engine.
-      buildContext.getArtifactCache().skipPendingAndFutureAsyncFetches();
-    }
-
-    return keepGoing;
+  private boolean isKeepGoingEnabled(BuildEngineBuildContext buildContext) {
+    return buildMode == BuildType.POPULATE_FROM_REMOTE_CACHE || buildContext.isKeepGoing();
   }
 
   private ListenableFuture<BuildResult> processBuildRule(
@@ -484,7 +508,8 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
                 ruleKeyFactories.getDefaultRuleKeyFactory().build(rule).toString())
             .addBuildMetadata(BuildInfo.MetadataKey.BUILD_ID, buildContext.getBuildId().toString());
     BuildableContext buildableContext = new DefaultBuildableContext(buildInfoRecorder);
-    return new CachingBuildRuleBuilder(
+    CachingBuildRuleBuilder cachingBuildRuleBuilder =
+        new CachingBuildRuleBuilder(
             new DefaultBuildRuleBuilderDelegate(this, buildContext),
             artifactCacheSizeLimit,
             buildInfoStoreManager,
@@ -510,8 +535,13 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
             buildableContext,
             pipelinesRunner,
             remoteBuildRuleCompletionWaiter,
-            customBuildRuleStrategy)
-        .build();
+            customBuildRuleStrategy,
+            manifestService);
+    ruleBuilders.add(new WeakReference<>(cachingBuildRuleBuilder));
+    if (firstFailure.get() != null) {
+      cachingBuildRuleBuilder.cancel(firstFailure.get());
+    }
+    return cachingBuildRuleBuilder.build();
   }
 
   public static class DefaultBuildRuleBuilderDelegate
@@ -531,13 +561,14 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     }
 
     @Override
-    public boolean shouldKeepGoing() {
-      return cachingBuildEngine.shouldKeepGoing(buildContext);
-    }
-
-    @Override
-    public void setFirstFailure(Throwable throwable) {
-      cachingBuildEngine.firstFailure = throwable;
+    public void setFirstFailure(BuildRuleFailedException throwable) {
+      if (cachingBuildEngine.firstFailure.get() == null
+          && !cachingBuildEngine.isKeepGoingEnabled(buildContext)) {
+        cachingBuildEngine.terminateBuildWithFailure(throwable);
+        // Ensure any pending/future cache fetch requests are not processed.
+        // Note: these are processed on a different Executor from the one used by the build engine.
+        buildContext.getArtifactCache().skipPendingAndFutureAsyncFetches();
+      }
     }
 
     @Override
@@ -549,12 +580,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     @Override
     public void addAsyncCallback(ListenableFuture<Void> callback) {
       cachingBuildEngine.asyncCallbacks.add(callback);
-    }
-
-    @Override
-    @Nullable
-    public Throwable getFirstFailure() {
-      return cachingBuildEngine.firstFailure;
     }
 
     @Override

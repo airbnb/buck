@@ -22,6 +22,7 @@ import com.facebook.buck.parser.DefaultProjectBuildFileParserFactory;
 import com.facebook.buck.parser.ParserPythonInterpreterProvider;
 import com.facebook.buck.parser.api.ProjectBuildFileParser;
 import com.facebook.buck.parser.function.BuckPyFunction;
+import com.facebook.buck.parser.syntax.ListWithSelects;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.util.Escaper;
 import com.facebook.buck.util.ExitCode;
@@ -31,11 +32,8 @@ import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.syntax.SelectorList;
-import com.google.devtools.build.lib.syntax.SkylarkNestedSet;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -90,8 +88,7 @@ public class AuditRulesCommand extends AbstractCommand {
   }
 
   @Override
-  public ExitCode runWithoutHelp(CommandRunnerParams params)
-      throws IOException, InterruptedException {
+  public ExitCode runWithoutHelp(CommandRunnerParams params) throws Exception {
     ProjectFilesystem projectFilesystem = params.getCell().getFilesystem();
     try (ProjectBuildFileParser parser =
         new DefaultProjectBuildFileParserFactory(
@@ -99,7 +96,9 @@ public class AuditRulesCommand extends AbstractCommand {
                 params.getConsole(),
                 new ParserPythonInterpreterProvider(
                     params.getCell().getBuckConfig(), params.getExecutableFinder()),
-                params.getKnownRuleTypesProvider())
+                params.getKnownRuleTypesProvider(),
+                params.getManifestServiceSupplier(),
+                params.getFileHashCache())
             .createBuildFileParser(
                 params.getBuckEventBus(), params.getCell(), params.getWatchman())) {
       /*
@@ -227,9 +226,6 @@ public class AuditRulesCommand extends AbstractCommand {
   }
 
   private static String createDisplayString(String indent, @Nullable Object value) {
-    if (value instanceof SkylarkNestedSet) {
-      value = ((SkylarkNestedSet) value).toCollection();
-    }
     if (value == null) {
       return "None";
     } else if (value instanceof Boolean) {
@@ -262,7 +258,7 @@ public class AuditRulesCommand extends AbstractCommand {
 
       out.append(indent).append("}");
       return out.toString();
-    } else if (value instanceof SelectorList) {
+    } else if (value instanceof ListWithSelects) {
       return value.toString();
     } else {
       throw new IllegalStateException();

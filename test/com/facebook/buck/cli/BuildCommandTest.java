@@ -154,15 +154,14 @@ public class BuildCommandTest {
             "    },",
             "    \"//fake:rule3\" : {",
             "      \"success\" : true,",
-            "      \"type\" : \"FETCHED_FROM_CACHE\",",
-            "      \"output\" : null",
+            "      \"type\" : \"FETCHED_FROM_CACHE\"",
             "    },",
             "    \"//fake:rule4\" : {",
             "      \"success\" : false",
             "    }",
             "  },",
             "  \"failures\" : {",
-            "    \"//fake:rule2\" : \"some\"",
+            "    \"//fake:rule2\" : \"java.lang.RuntimeException: some\"",
             "  }",
             "}");
     String observedReport =

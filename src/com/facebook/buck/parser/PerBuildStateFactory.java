@@ -21,14 +21,29 @@ import com.facebook.buck.core.config.BuckConfig;
 import com.facebook.buck.core.rules.knowntypes.KnownRuleTypesProvider;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.io.watchman.Watchman;
+import com.facebook.buck.manifestservice.ManifestService;
 import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
+import com.facebook.buck.util.ThrowingCloseableMemoizedSupplier;
+import com.facebook.buck.util.cache.FileHashCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListeningExecutorService;
+import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 public abstract class PerBuildStateFactory {
+
+  protected final ThrowingCloseableMemoizedSupplier<ManifestService, IOException>
+      manifestServiceSupplier;
+  protected final FileHashCache fileHashCache;
+
+  protected PerBuildStateFactory(
+      ThrowingCloseableMemoizedSupplier<ManifestService, IOException> manifestServiceSupplier,
+      FileHashCache fileHashCache) {
+    this.manifestServiceSupplier = manifestServiceSupplier;
+    this.fileHashCache = fileHashCache;
+  }
 
   /**
    * Creates {@link PerBuildStateFactory} which can be used to create {@link PerBuildState}.
@@ -42,7 +57,9 @@ public abstract class PerBuildStateFactory {
       ParserPythonInterpreterProvider parserPythonInterpreterProvider,
       BuckConfig buckConfig,
       Watchman watchman,
-      BuckEventBus eventBus) {
+      BuckEventBus eventBus,
+      ThrowingCloseableMemoizedSupplier<ManifestService, IOException> manifestServiceSupplier,
+      FileHashCache fileHashCache) {
     return buckConfig.getView(ParserConfig.class).getEnableConfigurableAttributes()
         ? new PerBuildStateFactoryWithConfigurableAttributes(
             typeCoercerFactory,
@@ -50,14 +67,18 @@ public abstract class PerBuildStateFactory {
             knownRuleTypesProvider,
             parserPythonInterpreterProvider,
             watchman,
-            eventBus)
+            eventBus,
+            manifestServiceSupplier,
+            fileHashCache)
         : new LegacyPerBuildStateFactory(
             typeCoercerFactory,
             marshaller,
             knownRuleTypesProvider,
             parserPythonInterpreterProvider,
             watchman,
-            eventBus);
+            eventBus,
+            manifestServiceSupplier,
+            fileHashCache);
   }
 
   public PerBuildState create(

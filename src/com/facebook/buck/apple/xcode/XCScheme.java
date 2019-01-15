@@ -223,29 +223,47 @@ public class XCScheme {
       ;
     }
 
+    /** Watch Interface property in Watch app scheme used to choose which interface is launched. */
+    public enum WatchInterface {
+      /** Launches the Watch app */
+      MAIN,
+      /** Launches the Watch app's complication */
+      COMPLICATION,
+      /** Launches the Watch app's dynamic notification with notification payload */
+      DYNAMIC_NOTIFICATION,
+      /** Launches the Watch app's static notification with notification payload */
+      STATIC_NOTIFICATION,
+    }
+
     BuildableReference buildableReference;
     private final String buildConfiguration;
     private final Optional<String> runnablePath;
     private final Optional<String> remoteRunnablePath;
+    private final Optional<WatchInterface> watchInterface;
     private final LaunchStyle launchStyle;
     private final Optional<ImmutableMap<String, String>> environmentVariables;
+    private final Optional<String> notificationPayloadFile;
 
     public LaunchAction(
         BuildableReference buildableReference,
         String buildConfiguration,
         Optional<String> runnablePath,
         Optional<String> remoteRunnablePath,
+        Optional<WatchInterface> watchInterface,
         LaunchStyle launchStyle,
         Optional<ImmutableMap<String, String>> environmentVariables,
         Optional<ImmutableList<SchemePrePostAction>> preActions,
-        Optional<ImmutableList<SchemePrePostAction>> postActions) {
+        Optional<ImmutableList<SchemePrePostAction>> postActions,
+        Optional<String> notificationPayloadFile) {
       super(preActions, postActions);
       this.buildableReference = buildableReference;
       this.buildConfiguration = buildConfiguration;
       this.runnablePath = runnablePath;
       this.remoteRunnablePath = remoteRunnablePath;
+      this.watchInterface = watchInterface;
       this.launchStyle = launchStyle;
       this.environmentVariables = environmentVariables;
+      this.notificationPayloadFile = notificationPayloadFile;
     }
 
     public BuildableReference getBuildableReference() {
@@ -262,6 +280,14 @@ public class XCScheme {
 
     public Optional<String> getRemoteRunnablePath() {
       return remoteRunnablePath;
+    }
+
+    public Optional<WatchInterface> getWatchInterface() {
+      return watchInterface;
+    }
+
+    public Optional<String> getNotificationPayloadFile() {
+      return notificationPayloadFile;
     }
 
     public LaunchStyle getLaunchStyle() {

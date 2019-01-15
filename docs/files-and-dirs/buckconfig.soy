@@ -1,3 +1,18 @@
+/*
+ * Copyright 2018-present Facebook, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License. You may obtain
+ * a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
 {namespace buck.buckconfig}
 
 /***/
@@ -52,6 +67,13 @@ That is, it is divided into <em>sections</em> where each section
 contains a collection of key <em>names</em> and key <em>values</em>.
 The <code>.buckconfig</code> implementation supports some modifications
 to the INI file format; these are discussed below.
+</p>
+
+<p>
+<strong>Note:</strong> As just mentioned, we have extended the INI
+file parser that Buck uses to parse configuration files. As a result,
+{sp}<em>INI file parsers provided by other languages or libraries are
+often not able to parse Buck's configuration files successfully</em>.
 </p>
 
 
@@ -225,9 +247,9 @@ the {sp}{call buck.concept_link}{param page: 'buckd' /}{param name: 'Buck Daemon
 <p>
 For a description of how Buck resolves collisions between settings in
 these configuration files, see the 
-section <strong>Precedence of Buck configuration specifications</strong> below.
+section {call buckconfig.section_concept_link}{param id:'config-precedence' /}{param rendered_text: 'Precedence of Buck configuration specifications' /}{/call}
+below.
 </p>
-
 
 <h2>Command-line control of configuration</h2>
 
@@ -253,7 +275,7 @@ rendered_text: '<strong>Common Parameters</strong>' /}{/call} topic.
 </p>
 
 
-<h2>Precedence of Buck configuration specifications</h2>
+{call buckconfig.section_concept_h2}{param id:'config-precedence' /}{param title:'Precedence of Buck configuration specifications' /}{/call}
 
 <p>
 The following list shows the order of precedence for how Buck interprets
@@ -282,6 +304,99 @@ Files in a <code>.buckconfig.d</code> directory have precedence
 according to the lexicographical order of their file names. 
 Files <em>later</em> in the lexicographical order have precedence 
 over files earlier in that order.
+</p>
+
+
+<h2>Configuration files can include other files</h2>
+
+<p>
+Any of the configuration files that we've discussed so far can also
+include by reference other files that contain configuration information.
+These included files can contain complete <code>.buckconfig</code> sections 
+or they can contain a group of key name/value pairs that constitute part
+of a section. In this second use case, you'll need to ensure that 
+the <em>included</em> file is referenced beneath the appropriate section 
+in the <em>including</em> file. Because of this additional complexity, 
+we recommend that you include only files that contain complete sections.
+</p>
+
+<p>
+<strong>Note:</strong> Inclusion of files is a Buck-specific extension
+to the INI file parser that Buck uses. Therefore, if you use this
+feature, your Buck configuration files will probably not be parsable by
+other more-generic INI file parsers.
+</p>
+
+<p>
+The syntax to include a file is
+<p>
+<pre>
+{literal}
+&lt;file:<em>path-to-included-file</em>>
+{/literal}
+</pre>
+</p>
+
+<p>
+where <em>path-to-included-file</em> is either a relative path from the
+including file (recommended) or an absolute path from the root of the
+file system.  
+</p>
+
+<p>
+You can also specify that the file should be included only if it exists
+by prefixing with a question mark (<code>?</code>). 
+</p>
+
+<p>
+<pre>
+{literal}
+&lt;?file:<em>path-to-included-file</em>>
+{/literal}
+</pre>
+</p>
+
+<p>
+If you use this prefix, it is not an error condition if the file does 
+not exist; Buck just silently continues to process the rest of the 
+configuration file.
+</p>
+
+<p>
+In the following example, the <code>.buckconfig</code> file includes
+the file <code>cxx-other-platform.include</code> which exists in the
+subdirectory <code>cxx-other-platform</code>. 
+The <code>.buckconfig</code> file will also include the 
+file <code>future-platform</code> from the directory <code>future-platform.include</code> if 
+that file exists.
+</p>
+
+<p>
+<pre>
+{literal}
+#
+# .buckconfig
+#
+[cxx]
+  cxxppflags="-D MYMACRO=\"Buck\""
+
+&lt;file:cxx-other-platform/cxx-other-platform.include>
+
+&lt;?file:future-platform/future-platform.include>
+{/literal}
+</pre>
+</p>
+
+<p>
+<pre>
+{literal}
+#
+# cxx-other-platform.include
+#
+[cxx#other_platform]
+  cxxppflags="-D MYMACRO=\"Watchman\""
+{/literal}
+</pre>
 </p>
 
 
@@ -870,6 +985,17 @@ osx_toolchains_override = tools.stable,tools.swift40,tools.common
   {/param}
 {/call}
 
+{call buckconfig.entry}
+  {param section: 'apple' /}
+  {param name: 'use_flavored_cxx_sections' /}
+  {param example_value: 'true' /}
+  {param description}
+    By default, Buck uses the C/C++ toolchain and flag settings in the <code>cxx</code>
+    section to extend Apple C/C++ platform.  With this parameter set, Buck will instead
+    use settings in <code>cxx#<apple-platform-name></code> sections (e.g. <code>cxx#macosx-x86_64.cxx_flags=-foo</code>).
+  {/param}
+{/call}
+
 {call buckconfig.section}
   {param name: 'build' /}
   {param description}
@@ -1339,11 +1465,16 @@ osx_toolchains_override = tools.stable,tools.swift40,tools.common
   {param name: 'http_client_tls_cert' /}
   {param example_value: '/etc/pki/client.crt' /}
   {param description}
-    The path to a PEM encoded client X.509 TLS certificate that should be used for any http requests to a remote cache.
-    This is used when http_mode settings are one of "http" or "thrift_over_http", and operates on both read and write connections.
-    This can be useful within a server to restrict access to a write path, log which users are writing which artifacts, and generally authenticate cache clients.
+    <p>
+    The path to a PEM encoded client X.509 TLS certificate that should be used for any HTTP requests to a remote cache.
+    This is used when {call buckconfig.http_mode /} settings are one of <code>http</code> or <code>thrift_over_http</code>, and operates on both read and write connections.
+  </p>
 
-    <p>Note: http_client_tls_cert must be set for this setting to be used.</p>
+    <p>
+    This can be useful within a server to restrict access to a write path, log which users are writing which artifacts, and generally authenticate cache clients.
+    </p>
+
+    <p><strong>Note:</strong> <code>http_client_tls_key</code> must be set for this setting to be used.</p>
   {/param}
 {/call}
 
@@ -1352,11 +1483,16 @@ osx_toolchains_override = tools.stable,tools.swift40,tools.common
   {param name: 'http_client_tls_key' /}
   {param example_value: '/etc/pki/client.key' /}
   {param description}
-    The path to a PEM encoded PKCS#8 key that should be used for any http requests to a remote cache.
-    This is used when http_mode settings are one of "http" or "thrift_over_http", and operates on both read and write connections.
-    This can be useful within a server to restrict access to a write path, log which users are writing which artifacts, and generally authenticate cache clients.
+    <p>
+    The path to a PEM encoded PKCS#8 key that should be used for any HTTP requests to a remote cache.
+    This is used when {call buckconfig.http_mode /} settings are one of <code>http</code> or <code>thrift_over_http</code>, and operates on both read and write connections.
+    </p>
 
-    <p>Note: http_client_tls_cert must be set for this setting to be used.</p>
+    <p>
+    This can be useful within a server to restrict access to a write path, log which users are writing which artifacts, and generally authenticate cache clients.
+    </p>
+
+    <p><strong>Note:</strong> <code>http_client_tls_cert</code> must be set for this setting to be used.</p>
   {/param}
 {/call}
 
@@ -3313,6 +3449,7 @@ your <code>.buckjavaargs</code> file</a>:
       Buck searches for this version in the subdirectories beneath the
       directory specified by either the <code>ANDROID_NDK_REPOSITORY</code> environment 
       variable or the value of the {call buckconfig.ndk_repository_path /} property.
+      Buck prefers an exact match, and otherwise accepts a prefix match.
     </p>
 
     <p>
@@ -3766,12 +3903,71 @@ Pkg.Revision = 13.1.3345770
 
 {call buckconfig.entry}
   {param section: 'project' /}
+  {param name: 'ide_force_kill' /}
+  {param description}
+    <p>
+      Configures how the <code>buck project</code> command responds if an
+      instance of Apple's Xcode IDE is running. 
+    </p>
+
+<p>
+<pre class="prettyprint lang-ini">
+{literal}
+[project]
+  ide_force_kill = never
+{/literal}
+</pre>
+</p>
+
+    <p>
+      Possible values are:
+    </p>
+
+    <ul>
+      <li>
+        <code>always</code> : Always terminate Xcode. Do not ask first.
+      </li>
+
+      <li>
+        <code>never</code>  : Never terminate Xcode.
+      </li>
+
+      <li>
+        <code>prompt</code> : Ask the user whether to terminate Xcode.
+        This is the default.
+      </li>
+    </ul>
+
+    <p>
+      To specify that Buck should respond in a way that is different
+      than the <code>.buckconfig</code> setting, use the
+      <code>--config</code> command-line option. 
+    <p>
+
+<pre>
+{literal}
+buck project --config project.ide_force_kill=always
+{/literal}
+</pre>
+</p>
+
+    <p>
+      For more information about the <code>--config</code> option, see 
+      the {call buck.cmd_link}{param name: 'common_parameters' /}{param rendered_text: '<strong>Common Parameters</strong>' /}{/call} topic.
+    </p>
+
+
+  {/param}
+
+{/call}
+ {call buckconfig.entry}
+  {param section: 'project' /}
   {param name: 'initial_targets' /}
   {param example_value: '//java/com/facebook/schema:generate_thrift_jar' /}
   {param description}
     A space-separated list of {call buck.build_target /}s to run when {call buck.cmd_project /} is
     executed.  This is often a list of {call buck.genrule /}s whose outputs need to exist in order
-    for an IDE to be ale to build a project without the help of Buck.
+    for an IDE to be able to build a project without the help of Buck.
   {/param}
 {/call}
 
@@ -3851,6 +4047,17 @@ Pkg.Revision = 13.1.3345770
   {param example_value: 'math, Foo' /}
   {param description}
     A comma-separated list that configures which Python modules can be imported in build files.
+  {/param}
+{/call}
+
+{call buckconfig.entry}
+  {param section: 'project' /}
+  {param name: 'shared_libraries_in_bundles' /}
+  {param example_value: 'false' /}
+  {param description}
+    When using xcode project, for projects that depend on a library, if set to <code>'true'</code>,
+    if that library is the 'binary' of a bundle, the bundle will replace the library in the Xcode
+    linking phase
   {/param}
 {/call}
 
@@ -4491,6 +4698,15 @@ buck = .
   {/param}
 {/call}
 
+{call buckconfig.entry}
+  {param section: 'test' /}
+  {param name: 'threads' /}
+  {param example_value: '5' /}
+  {param description}
+    Specify number of threads used when running test.
+  {/param}
+{/call}
+
 {call buckconfig.section}
   {param name: 'thrift' /}
   {param description}
@@ -4687,6 +4903,30 @@ buck = .
     Valid values are ENABLED, DISABLED, and AUTO. By default, this is set to AUTO
     which will take OS, terminal settings and other things into account. In most
     interactive cases, it will be enabled.
+  {/param}
+{/call}
+
+{call buckconfig.entry}
+  {param section: 'ui' /}
+  {param name: 'warn_on_config_file_overrides' /}
+  {param example_value: 'false' /}
+  {param description}
+    Whether to display a warning when using configuration overrides from
+    {sp}<code>.buckconfig.local</code> or any of the files mentioned in {call buckconfig.section_concept_link}{param id:'config-precedence' /}{param rendered_text: 'Precedence of Buck configuration specifications' /}{/call} This is true by default.
+  {/param}
+{/call}
+
+{call buckconfig.entry}
+  {param section: 'ui' /}
+  {param name: 'warn_on_config_file_overrides_ignored_files' /}
+  {param example_value: 'experiments,system' /}
+  {param description}
+    <p>A comma-separated list of names of configuration files that should be ignored.</p>
+
+    By default, Buck prints a warning if settings are in use from any of the files in {call buckconfig.section_concept_link}{param id:'config-precedence' /}{param rendered_text: 'Precedence of Buck configuration specifications' /}{/call}
+    Sometimes, however, a user should not be alerted about specific files. For example, there may be global Buck settings in <code>/etc/buckconfig.d/system</code> that
+    are managed by an IT organization, not the user, and the warning would just be ignored. In this case, this setting could be set to <code>system</code>
+    so that <code>/etc/buckconfig.d/system</code> being present would not elicit a warning.
   {/param}
 {/call}
 

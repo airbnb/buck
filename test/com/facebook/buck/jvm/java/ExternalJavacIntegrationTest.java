@@ -24,6 +24,7 @@ import com.facebook.buck.testutil.ProcessResult;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.TestDataHelper;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.facebook.buck.util.environment.Platform;
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
@@ -69,6 +70,30 @@ public class ExternalJavacIntegrationTest {
     workspace.runBuckCommand("build", "//:lib", "-v", "2").assertSuccess();
   }
 
+  @Test(timeout = 180000)
+  public void whenExternalSrcZipUsedBuildingBinarySucceeds() throws IOException {
+    assumeTrue(Platform.detect() != Platform.WINDOWS);
+
+    ProjectWorkspace workspace =
+        TestDataHelper.createProjectWorkspaceForScenario(this, "external_javac", tmp);
+
+    workspace.setUp();
+
+    workspace.replaceFileContents(".buckconfig", "@JAVAC@", "//:real-javac.sh");
+
+    workspace
+        .runBuckCommand("build", "-c", "cache.mode=dir", "//java/com/example:example_binary")
+        .assertSuccess();
+
+    workspace.runBuckCommand("clean", "--keep-cache").assertSuccess();
+
+    workspace.writeContentsToPath("int foo() {  return 1; }", "java/com/example/foo.c");
+
+    workspace
+        .runBuckCommand("build", "-c", "cache.mode=dir", "//java/com/example:example_binary")
+        .assertSuccess();
+  }
+
   @Test
   public void whenExternalJavacFailsOutputIsInFailureMessage() throws IOException {
     assumeTrue(Platform.detect() != Platform.WINDOWS);
@@ -105,7 +130,11 @@ public class ExternalJavacIntegrationTest {
     workspace.replaceFileContents(".buckconfig", "@JAVAC@", javac.toAbsolutePath().toString());
     workspace
         .runBuckdCommand(
-            ImmutableMap.of("CHECK_THIS_VARIABLE", "1", "PATH", System.getenv("PATH")),
+            ImmutableMap.of(
+                "CHECK_THIS_VARIABLE",
+                "1",
+                "PATH",
+                EnvVariablesProvider.getSystemEnv().get("PATH")),
             "build",
             "example")
         .assertSuccess();

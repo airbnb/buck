@@ -32,15 +32,16 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import org.stringtemplate.v4.ST;
 
 /** Writes the serialized representations of IntelliJ project components to disk. */
@@ -102,8 +103,7 @@ public class IjProjectWriter {
     writeWorkspace();
 
     if (projectConfig.isGeneratingTargetModuleMapEnabled()) {
-      writeTargetModules(
-          updateTargetModules(new HashMap<>(), projectDataPreparer.getModulesToBeWritten()));
+      writeTargetModules(projectDataPreparer.getModulesToBeWritten(), false);
     }
   }
 
@@ -111,24 +111,21 @@ public class IjProjectWriter {
     Path targetModulesPath = getIdeaConfigDir().resolve("target-modules.json");
     return outFilesystem.exists(targetModulesPath)
         ? ObjectMappers.createParser(outFilesystem.newFileInputStream(targetModulesPath))
-            .readValueAs(new TypeReference<Map<String, String>>() {})
-        : new HashMap<>();
+            .readValueAs(new TypeReference<TreeMap<String, String>>() {})
+        : Maps.newTreeMap();
   }
 
-  private static Map<String, String> updateTargetModules(
-      Map<String, String> existingModules, Set<IjModule> newModules) {
+  private void writeTargetModules(Set<IjModule> newModules, boolean update) throws IOException {
+    Map<String, String> targetModules = update ? readTargetModules() : Maps.newTreeMap();
     for (IjModule module : newModules) {
       for (BuildTarget target : module.getTargets()) {
-        existingModules.put(target.getFullyQualifiedName(), module.getName());
+        targetModules.put(target.getFullyQualifiedName(), module.getName());
       }
     }
-    return existingModules;
-  }
-
-  private void writeTargetModules(Map<String, String> targetModules) throws IOException {
     Path targetModulesPath = getIdeaConfigDir().resolve("target-modules.json");
     try (JsonGenerator generator =
-        ObjectMappers.createGenerator(outFilesystem.newFileOutputStream(targetModulesPath))) {
+        ObjectMappers.createGenerator(outFilesystem.newFileOutputStream(targetModulesPath))
+            .useDefaultPrettyPrinter()) {
       generator.writeObject(targetModules);
     }
   }
@@ -280,8 +277,7 @@ public class IjProjectWriter {
     updateModulesIndex(projectDataPreparer.getModulesToBeWritten());
 
     if (projectConfig.isGeneratingTargetModuleMapEnabled()) {
-      writeTargetModules(
-          updateTargetModules(readTargetModules(), projectDataPreparer.getModulesToBeWritten()));
+      writeTargetModules(projectDataPreparer.getModulesToBeWritten(), true);
     }
   }
 

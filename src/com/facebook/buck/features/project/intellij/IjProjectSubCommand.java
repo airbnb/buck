@@ -20,9 +20,9 @@ import com.facebook.buck.artifact_cache.NoopArtifactCache.NoopArtifactCacheFacto
 import com.facebook.buck.cli.BuildCommand;
 import com.facebook.buck.cli.CommandRunnerParams;
 import com.facebook.buck.cli.CommandThreadManager;
+import com.facebook.buck.cli.ProjectGeneratorParameters;
 import com.facebook.buck.cli.ProjectSubCommand;
 import com.facebook.buck.cli.StringSetOptionHandler;
-import com.facebook.buck.cli.parameter_extractors.ProjectGeneratorParameters;
 import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.features.project.intellij.aggregation.AggregationMode;
 import com.facebook.buck.features.project.intellij.model.IjProjectConfig;
@@ -215,8 +215,14 @@ public class IjProjectSubCommand extends ProjectSubCommand {
         new BuildCommand(
             targets.stream().map(Object::toString).collect(ImmutableList.toImmutableList()));
     buildCommand.setKeepGoing(true);
-    return buildCommand.run(
-        disableCaching ? params.withArtifactCacheFactory(new NoopArtifactCacheFactory()) : params);
+    try {
+      return buildCommand.run(
+          disableCaching
+              ? params.withArtifactCacheFactory(new NoopArtifactCacheFactory())
+              : params);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   public static class AggregationModeOptionHandler extends OptionHandler<AggregationMode> {

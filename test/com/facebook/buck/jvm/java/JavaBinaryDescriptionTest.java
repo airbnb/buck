@@ -50,7 +50,7 @@ import org.junit.Test;
 public class JavaBinaryDescriptionTest {
 
   @Test
-  public void rulesExportedFromDepsBecomeFirstOrderDeps() throws Exception {
+  public void rulesExportedFromDepsBecomeFirstOrderDeps() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
 
     FakeJavaLibrary transitiveLibrary =
@@ -112,7 +112,7 @@ public class JavaBinaryDescriptionTest {
             .setSharedLib(lib);
     JavaLibraryBuilder javaLibBuilder =
         new JavaLibraryBuilder(
-                BuildTargetFactory.newInstance("//:lib"), new FakeProjectFilesystem(), null)
+                BuildTargetFactory.newInstance("//:lib"), new FakeProjectFilesystem())
             .addDep(cxxLibBuilder.getTarget())
             .addSrc(Paths.get("test/source.java"));
     JavaBinaryRuleBuilder javaBinBuilder =

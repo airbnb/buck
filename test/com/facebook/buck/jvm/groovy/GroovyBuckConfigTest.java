@@ -26,6 +26,7 @@ import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.util.config.RawConfig;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.google.common.collect.ImmutableMap;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -38,8 +39,7 @@ public class GroovyBuckConfigTest {
   @Rule public TemporaryPaths temporaryFolder = new TemporaryPaths();
 
   @Test
-  public void refuseToContinueWhenInsufficientInformationToFindGroovycIsProvided()
-      throws InterruptedException {
+  public void refuseToContinueWhenInsufficientInformationToFindGroovycIsProvided() {
     thrown.expectMessage(
         allOf(
             containsString("Unable to locate groovy compiler"),
@@ -49,12 +49,11 @@ public class GroovyBuckConfigTest {
     ImmutableMap<String, ImmutableMap<String, String>> rawConfig = ImmutableMap.of();
     GroovyBuckConfig groovyBuckConfig = createGroovyConfig(environment, rawConfig);
 
-    groovyBuckConfig.getGroovyCompiler();
+    groovyBuckConfig.getGroovyc();
   }
 
   @Test
-  public void refuseToContinueWhenInformationResultsInANonExistentGroovycPath()
-      throws InterruptedException {
+  public void refuseToContinueWhenInformationResultsInANonExistentGroovycPath() {
     String invalidPath = temporaryFolder.getRoot().toAbsolutePath() + "DoesNotExist";
     Path invalidDir = Paths.get(invalidPath);
     Path invalidGroovyc = invalidDir.resolve(MorePaths.pathWithPlatformSeparators("bin/groovyc"));
@@ -64,12 +63,12 @@ public class GroovyBuckConfigTest {
     ImmutableMap<String, ImmutableMap<String, String>> rawConfig = ImmutableMap.of();
     GroovyBuckConfig groovyBuckConfig = createGroovyConfig(environment, rawConfig);
 
-    groovyBuckConfig.getGroovyCompiler();
+    groovyBuckConfig.getGroovyc();
   }
 
   @Test
-  public void byDefaultFindGroovycFromGroovyHome() throws InterruptedException {
-    String systemGroovyHome = System.getenv("GROOVY_HOME");
+  public void byDefaultFindGroovycFromGroovyHome() {
+    String systemGroovyHome = EnvVariablesProvider.getSystemEnv().get("GROOVY_HOME");
     assumeTrue(systemGroovyHome != null);
 
     ImmutableMap<String, String> environment = ImmutableMap.of("GROOVY_HOME", systemGroovyHome);
@@ -77,12 +76,12 @@ public class GroovyBuckConfigTest {
     GroovyBuckConfig groovyBuckConfig = createGroovyConfig(environment, rawConfig);
 
     // it's enough that this doesn't throw.
-    groovyBuckConfig.getGroovyCompiler();
+    groovyBuckConfig.getGroovyc();
   }
 
   @Test
-  public void explicitConfigurationOverridesTheEnvironment() throws InterruptedException {
-    String systemGroovyHome = System.getenv("GROOVY_HOME");
+  public void explicitConfigurationOverridesTheEnvironment() {
+    String systemGroovyHome = EnvVariablesProvider.getSystemEnv().get("GROOVY_HOME");
     assumeTrue(systemGroovyHome != null);
 
     // deliberately break the env
@@ -92,7 +91,7 @@ public class GroovyBuckConfigTest {
     GroovyBuckConfig groovyBuckConfig = createGroovyConfig(environment, rawConfig);
 
     // it's enough that this doesn't throw.
-    groovyBuckConfig.getGroovyCompiler();
+    groovyBuckConfig.getGroovyc();
   }
 
   private GroovyBuckConfig createGroovyConfig(

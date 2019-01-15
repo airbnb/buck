@@ -17,6 +17,7 @@
 package com.facebook.buck.parser;
 
 import static com.facebook.buck.util.string.MoreStrings.linesToText;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -32,6 +33,8 @@ import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.TestDataHelper;
 import com.facebook.buck.util.ExitCode;
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableSet;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -576,10 +579,60 @@ public class ParserIntegrationTest {
   }
 
   @Test
+  public void skylarkParseErrorIfTopLevelRecursiveGlob() throws Exception {
+    ProjectWorkspace workspace =
+        TestDataHelper.createProjectWorkspaceForScenario(
+            this, "top_level_recursive_glob", temporaryFolder);
+    workspace.setUp();
+    assertParseFailedWithSubstrings(
+        workspace.runBuckCommand(
+            "build", "//:glob", "-c", "parser.default_build_file_syntax=skylark"),
+        "Recursive globs are prohibited at top-level directory");
+  }
+
+  @Test
   public void parseAllFromRootCellShouldIgnoreSubcells() throws Exception {
     ProjectWorkspace workspace =
         TestDataHelper.createProjectWorkspaceForScenario(this, "subcell_ignored", temporaryFolder);
     workspace.setUp();
     workspace.runBuckBuild("//...").assertSuccess();
+  }
+
+  @Test
+  public void testTargetsTypoAndGiveSuggestions() throws IOException {
+    ProjectWorkspace workspace =
+        TestDataHelper.createProjectWorkspaceForScenario(
+            this, "target_suggestion", temporaryFolder);
+    workspace.setUp();
+
+    // First check for correct usage.
+    ProcessResult result = workspace.runBuckCommand("targets", "//simple:").assertSuccess();
+    assertEquals(
+        ImmutableSet.of("//simple:simple"),
+        ImmutableSet.copyOf(
+            Splitter.on(System.lineSeparator()).omitEmptyStrings().split(result.getStdout())));
+
+    // Give target suggestion if possible
+    result = workspace.runBuckCommand("targets", "//simple:smple");
+    assertThat(
+        result.getStderr(),
+        allOf(containsString("Did you mean:"), containsString("//simple:simple")));
+
+    // Give cross build file target suggestions if possible
+    result = workspace.runBuckCommand("targets", "//simple/foo:bar");
+    assertThat(
+        result.getStderr(),
+        allOf(
+            containsString("Did you mean:"),
+            containsString("//simple/foo:foo"),
+            containsString("//simple/bar:bar")));
+
+    // Do not give suggestion if no suggestion for targets is found
+    result = workspace.runBuckCommand("targets", "//simple:NotASimpleRule");
+    assertThat(
+        result.getStderr(),
+        allOf(
+            containsString("The rule //simple:NotASimpleRule could not be found."),
+            not(containsString("Did you mean:"))));
   }
 }

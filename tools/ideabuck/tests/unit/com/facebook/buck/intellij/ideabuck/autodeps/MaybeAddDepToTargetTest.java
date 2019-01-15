@@ -16,12 +16,17 @@
 
 package com.facebook.buck.intellij.ideabuck.autodeps;
 
-import static com.facebook.buck.intellij.ideabuck.test.TestUtil.buckFile;
 import static org.junit.Assert.assertEquals;
 
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.Test;
 
 public class MaybeAddDepToTargetTest {
+
+  private static String buckFile(String... lines) {
+    return Stream.of(lines).collect(Collectors.joining("\n", "", "\n"));
+  }
 
   @Test
   public void addsRefToDepsWhenAbsent() {
@@ -56,7 +61,7 @@ public class MaybeAddDepToTargetTest {
             "\t\t\"//or:here\",",
             "\t]",
             ")");
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "from//that:that", "to//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "from//that:that", "to//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -81,7 +86,7 @@ public class MaybeAddDepToTargetTest {
             "\t\t\"//this:this\",",
             "\t]",
             ")");
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "cell//that:that", "cell//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "cell//that:that", "cell//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -106,7 +111,7 @@ public class MaybeAddDepToTargetTest {
             "\t\t\"//this:this\",",
             "\t]",
             ")");
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "from//that:that", "to//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "from//that:that", "to//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -122,7 +127,7 @@ public class MaybeAddDepToTargetTest {
             "\t]",
             ")");
     String expected = buckInput;
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "//this:this", "//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "//this:this", "//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -140,7 +145,7 @@ public class MaybeAddDepToTargetTest {
     String expected = buckInput;
     // 'cell//this' expands to 'cell//this:this', which (relative to 'cell//path:foo') is
     // '//this:this')
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "cell//this", "cell//path:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "cell//this", "cell//path:foo");
     assertEquals(expected, actual);
   }
 
@@ -159,7 +164,7 @@ public class MaybeAddDepToTargetTest {
             "\t]",
             ")");
     String expected = buckInput;
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "//this:this", "foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "//this:this", "foo");
     assertEquals(expected, actual);
   }
 
@@ -176,7 +181,7 @@ public class MaybeAddDepToTargetTest {
             "\t]",
             ")");
     String expected = buckInput;
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "//that:that", "//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "//that:that", "//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -192,7 +197,7 @@ public class MaybeAddDepToTargetTest {
             "\t]",
             ")");
     String expected = buckInput;
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "//that:that", "//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "//that:that", "//src:foo");
     assertEquals(expected, actual);
   }
 
@@ -208,7 +213,7 @@ public class MaybeAddDepToTargetTest {
             "\t]",
             "# No closing paren");
     String expected = buckInput;
-    String actual = BuckDeps.maybeAddDepToTarget(buckInput, "//that:that", "//src:foo");
+    String actual = BuckDeps.tryToAddDepsToTarget(buckInput, "//that:that", "//src:foo");
     assertEquals(expected, actual);
   }
 }

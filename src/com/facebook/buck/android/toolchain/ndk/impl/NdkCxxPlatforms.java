@@ -37,6 +37,7 @@ import com.facebook.buck.core.toolchain.tool.impl.VersionedTool;
 import com.facebook.buck.core.toolchain.toolprovider.ToolProvider;
 import com.facebook.buck.core.toolchain.toolprovider.impl.ConstantToolProvider;
 import com.facebook.buck.core.util.log.Logger;
+import com.facebook.buck.cxx.toolchain.ArchiveContents;
 import com.facebook.buck.cxx.toolchain.ArchiverProvider;
 import com.facebook.buck.cxx.toolchain.CompilerProvider;
 import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
@@ -57,6 +58,7 @@ import com.facebook.buck.io.ExecutableFinder;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.util.VersionStringComparator;
 import com.facebook.buck.util.environment.Platform;
+import com.facebook.buck.util.environment.PlatformType;
 import com.facebook.infer.annotation.Assertions;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -164,7 +166,9 @@ public class NdkCxxPlatforms {
                                 ? 15
                                 : ndkVersion.startsWith("16.")
                                     ? 16
-                                    : ndkVersion.startsWith("17.") ? 17 : -1;
+                                    : ndkVersion.startsWith("17.")
+                                        ? 17
+                                        : ndkVersion.startsWith("18.") ? 18 : -1;
   }
 
   public static String getDefaultGccVersionForNdk(String ndkVersion) {
@@ -488,11 +492,11 @@ public class NdkCxxPlatforms {
         new ConstantToolProvider(
             getCTool(toolchainPaths, compilerType.cxx, version, executableFinder));
     CompilerProvider cc =
-        new CompilerProvider(ccTool, type, config.getUseDetailedUntrackedHeaderMessages());
-    PreprocessorProvider cpp = new PreprocessorProvider(ccTool, type);
+        new CompilerProvider(ccTool, type, config.getUseDetailedUntrackedHeaderMessages(), true);
+    PreprocessorProvider cpp = new PreprocessorProvider(ccTool, type, true);
     CompilerProvider cxx =
-        new CompilerProvider(cxxTool, type, config.getUseDetailedUntrackedHeaderMessages());
-    PreprocessorProvider cxxpp = new PreprocessorProvider(cxxTool, type);
+        new CompilerProvider(cxxTool, type, config.getUseDetailedUntrackedHeaderMessages(), true);
+    PreprocessorProvider cxxpp = new PreprocessorProvider(cxxTool, type, true);
 
     CxxPlatform.Builder cxxPlatformBuilder = CxxPlatform.builder();
     ImmutableBiMap<Path, String> sanitizePaths = sanitizePathsBuilder.build();
@@ -530,6 +534,7 @@ public class NdkCxxPlatforms {
         .setAr(
             ArchiverProvider.from(
                 new GnuArchiver(getGccTool(toolchainPaths, "ar", version, executableFinder))))
+        .setArchiveContents(config.getArchiveContents().orElse(ArchiveContents.NORMAL))
         .setRanlib(
             new ConstantToolProvider(
                 getGccTool(toolchainPaths, "ranlib", version, executableFinder)))
@@ -1027,7 +1032,7 @@ public class NdkCxxPlatforms {
           unifiedHeaders);
     }
 
-    Path processPathPattern(Path root, String pattern) {
+    Path processPathPattern(Path root, String pattern, boolean appendExtension) {
       String key = root + "/" + pattern;
       Path result = cachedPaths.get(key);
       if (result == null) {
@@ -1051,6 +1056,9 @@ public class NdkCxxPlatforms {
           }
           result = result.resolve(s);
         }
+        if (appendExtension) {
+          result = appendExtensionIfNeeded(result);
+        }
         if (strict) {
           Assertions.assertCondition(result.toFile().exists(), result + " doesn't exist.");
         }
@@ -1059,22 +1067,32 @@ public class NdkCxxPlatforms {
       return result;
     }
 
+    Path processDirectoryPathPattern(Path root, String pattern) {
+      return processPathPattern(root, pattern, false);
+    }
+
+    Path processExecutablePathPattern(Path root, String pattern) {
+      return processPathPattern(root, pattern, true);
+    }
+
+    Path processDirectoryPathPattern(String s) {
+      return processDirectoryPathPattern(ndkRoot, s);
+    }
+
     private boolean isGcc() {
       return targetConfiguration.getCompiler().getType() == NdkCompilerType.GCC;
     }
 
-    Path processPathPattern(String s) {
-      return processPathPattern(ndkRoot, s);
-    }
-
     Path getNdkToolRoot() {
       if (isGcc()) {
-        return processPathPattern("toolchains/{toolchain}-{compiler_version}/prebuilt/{hostname}");
+        return processDirectoryPathPattern(
+            "toolchains/{toolchain}-{compiler_version}/prebuilt/{hostname}");
       } else {
         if (ndkMajorVersion < 11) {
-          return processPathPattern("toolchains/llvm-{compiler_version}/prebuilt/{hostname}");
+          return processDirectoryPathPattern(
+              "toolchains/llvm-{compiler_version}/prebuilt/{hostname}");
         } else {
-          return processPathPattern("toolchains/llvm/prebuilt/{hostname}");
+          return processDirectoryPathPattern("toolchains/llvm/prebuilt/{hostname}");
         }
       }
     }
@@ -1083,9 +1101,17 @@ public class NdkCxxPlatforms {
       return unifiedHeaders;
     }
 
+    /** Appends an executable extension if the current platform requires it. */
+    private static Path appendExtensionIfNeeded(Path path) {
+      if (Platform.detect().getType() == PlatformType.WINDOWS) {
+        return path.resolveSibling(path.getFileName() + ".exe");
+      }
+      return path;
+    }
+
     /** @return the path to arch-specific include files; only use with unified headers */
     Path getArchSpecificIncludes() {
-      return processPathPattern("sysroot/usr/include/{toolchain_target}");
+      return processDirectoryPathPattern("sysroot/usr/include/{toolchain_target}");
     }
 
     /**
@@ -1094,22 +1120,22 @@ public class NdkCxxPlatforms {
      */
     Path getIncludeSysroot() {
       if (isUnifiedHeaders()) {
-        return processPathPattern("sysroot");
+        return processDirectoryPathPattern("sysroot");
       }
       return getPlatformSysroot();
     }
 
     Path getPlatformSysroot() {
-      return processPathPattern("platforms/{target_platform}/arch-{target_arch}");
+      return processDirectoryPathPattern("platforms/{target_platform}/arch-{target_arch}");
     }
 
     Path getLibexecGccToolPath() {
       Assertions.assertCondition(isGcc());
       if (ndkMajorVersion < 12) {
-        return processPathPattern(
+        return processDirectoryPathPattern(
             getNdkToolRoot(), "libexec/gcc/{toolchain_target}/{compiler_version}");
       } else {
-        return processPathPattern(
+        return processDirectoryPathPattern(
             getNdkToolRoot(), "libexec/gcc/{toolchain_target}/{compiler_version}.x");
       }
     }
@@ -1129,43 +1155,44 @@ public class NdkCxxPlatforms {
           pattern = "lib64/{compiler_type}/{compiler_version}";
         }
       }
-      return processPathPattern(getNdkToolRoot(), pattern);
+      return processDirectoryPathPattern(getNdkToolRoot(), pattern);
     }
 
     Path getNdkGccToolRoot() {
-      return processPathPattern(
+      return processDirectoryPathPattern(
           "toolchains/{toolchain}-{gcc_compiler_version}/prebuilt/{hostname}");
     }
 
     Path getToolchainBinPath() {
       if (isGcc()) {
-        return processPathPattern(getNdkToolRoot(), "{toolchain_target}/bin");
+        return processDirectoryPathPattern(getNdkToolRoot(), "{toolchain_target}/bin");
       } else {
-        return processPathPattern(getNdkToolRoot(), "bin");
+        return processDirectoryPathPattern(getNdkToolRoot(), "bin");
       }
     }
 
     private Path getGccToolchainBinPath() {
-      return processPathPattern(getNdkGccToolRoot(), "{toolchain_target}/bin");
+      return processDirectoryPathPattern(getNdkGccToolRoot(), "{toolchain_target}/bin");
     }
 
     private Path getCxxRuntimeDirectory() {
       if (cxxRuntime == NdkCxxRuntime.GNUSTL) {
-        return processPathPattern("sources/cxx-stl/" + cxxRuntime.name + "/{gcc_compiler_version}");
+        return processDirectoryPathPattern(
+            "sources/cxx-stl/" + cxxRuntime.name + "/{gcc_compiler_version}");
       } else {
-        return processPathPattern("sources/cxx-stl/" + cxxRuntime.name);
+        return processDirectoryPathPattern("sources/cxx-stl/" + cxxRuntime.name);
       }
     }
 
     private Path getCxxRuntimeLibsDirectory() {
-      return processPathPattern(getCxxRuntimeDirectory(), "libs/{target_arch_abi}");
+      return processDirectoryPathPattern(getCxxRuntimeDirectory(), "libs/{target_arch_abi}");
     }
 
     Path getToolPath(String tool) {
       if (isGcc()) {
-        return processPathPattern(getNdkToolRoot(), "bin/{toolchain_target}-" + tool);
+        return processExecutablePathPattern(getNdkToolRoot(), "bin/{toolchain_target}-" + tool);
       } else {
-        return processPathPattern(getNdkToolRoot(), "bin/" + tool);
+        return processExecutablePathPattern(getNdkToolRoot(), "bin/" + tool);
       }
     }
 

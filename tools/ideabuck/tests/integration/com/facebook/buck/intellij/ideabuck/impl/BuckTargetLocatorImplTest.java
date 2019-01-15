@@ -16,70 +16,45 @@
 
 package com.facebook.buck.intellij.ideabuck.impl;
 
-import com.facebook.buck.intellij.ideabuck.api.BuckCellManager;
-import com.facebook.buck.intellij.ideabuck.api.BuckCellManager.Cell;
 import com.facebook.buck.intellij.ideabuck.api.BuckTarget;
+import com.facebook.buck.intellij.ideabuck.api.BuckTargetLocator;
 import com.facebook.buck.intellij.ideabuck.api.BuckTargetPattern;
+import com.facebook.buck.intellij.ideabuck.config.BuckCell;
+import com.facebook.buck.intellij.ideabuck.config.BuckCellSettingsProvider;
+import com.google.common.collect.Lists;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.psi.PsiManager;
 import com.intellij.testFramework.PlatformTestCase;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
-import org.easymock.EasyMock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/** Unit test for {@link BuckTargetLocatorImpl}. */
+/** Integration test for {@link BuckTargetLocatorImpl}. */
 public class BuckTargetLocatorImplTest extends PlatformTestCase {
 
   private Project project;
-  private VirtualFileManager virtualFileManager;
-  private PsiManager psiManager;
-  private BuckCellManager buckCellManager;
+  private BuckCellSettingsProvider buckCellSettingsProvider;
+  private BuckCell defaultCell;
+  private BuckTargetLocator buckTargetLocator;
+  private VirtualFile tempDir;
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
+    tempDir = getTempDir().createTempVDir();
     project = getProject();
-    virtualFileManager = VirtualFileManager.getInstance();
-    psiManager = PsiManager.getInstance(project);
-    buckCellManager = EasyMock.createMock(BuckCellManager.class);
+    buckCellSettingsProvider = BuckCellSettingsProvider.getInstance(project);
+    defaultCell = setDefaultCell(null, null, null);
+    buckTargetLocator = BuckTargetLocator.getInstance(project);
   }
 
-  private Cell createCell(@Nullable String name) {
-    return createCell(name, "BUCK");
-  }
-
-  private Cell createCell(@Nullable String name, String buildFileName) {
-    VirtualFile root = getTempDir().createTempVDir();
-    Path path = Paths.get(root.getCanonicalPath());
-    return new Cell() {
-      @Override
-      public Optional<String> getName() {
-        return Optional.ofNullable(name);
-      }
-
-      @Override
-      public String getBuildfileName() {
-        return buildFileName;
-      }
-
-      @Override
-      public Optional<VirtualFile> getRootDirectory() {
-        return Optional.of(root);
-      }
-
-      @Override
-      public Path getRootPath() {
-        return path;
-      }
-    };
-  }
+  // Helper methods
 
   @NotNull
   private <T> T unwrap(Optional<T> optional) {
@@ -92,191 +67,367 @@ public class BuckTargetLocatorImplTest extends PlatformTestCase {
     assertEquals(expected, actual.orElse(null));
   }
 
+  public BuckCell createCell(
+      @Nullable String name, @Nullable String tempRelativePath, @Nullable String buildfileName) {
+    BuckCell cell = new BuckCell();
+    if (name != null) {
+      cell = cell.withName(name);
+    }
+    if (tempRelativePath != null) {
+      cell = cell.withRoot(Paths.get(tempDir.getPath()).resolve(tempRelativePath).toString());
+    }
+    if (buildfileName != null) {
+      cell = cell.withBuildFileName(buildfileName);
+    }
+    return cell;
+  }
+
+  public BuckCell setDefaultCell(
+      @Nullable String name, @Nullable String tempRelativePath, String buildfileName) {
+    BuckCell cell = createCell(name, tempRelativePath, buildfileName);
+    buckCellSettingsProvider.setCells(Collections.singletonList(cell));
+    return cell;
+  }
+
+  public BuckCell addCell(String name, String tempRelativePath, String buildfileName) {
+    BuckCell cell = createCell(name, tempRelativePath, buildfileName);
+    List<BuckCell> cells = Lists.newArrayList(buckCellSettingsProvider.getCells());
+    cells.add(cell);
+    buckCellSettingsProvider.setCells(cells);
+    return cell;
+  }
+
+  private Path createFile(BuckCell cell, String cellRelativePath) {
+    try {
+      String basePath = project.getBasePath();
+      String root = cell.getRoot().replace("$PROJECT_DIR$", basePath);
+      Path path = Paths.get(root).resolve(cellRelativePath);
+      path.getParent().toFile().mkdirs();
+      try (FileWriter writer = new FileWriter(path.toFile())) {
+        writer.write("Test:" + getName());
+      }
+      return path;
+    } catch (IOException e) {
+      fail("Failed to create test file: " + e.getMessage());
+      throw new RuntimeException("Failed");
+    }
+  }
+
+  private Path createFileInDefaultCell(String defaultCellRelativePath) {
+    return createFile(defaultCell, defaultCellRelativePath);
+  }
+
+  private VirtualFile asVirtualFile(@Nullable Path expectedPath) {
+    if (expectedPath == null) {
+      return null;
+    }
+    return project.getBaseDir().getFileSystem().refreshAndFindFileByPath(expectedPath.toString());
+  }
+
+  // Actual tests start here
+
   // Test findPathForTarget and findVirtualFileForTarget together
 
-  public void testFindTargetInDefaultCell() throws IOException {
-    Cell cell = createCell(null, "BUILD");
-    buckCellManager.getDefaultCell();
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
+  private void checkFindTarget(String targetString, Path expected) {
+    BuckTarget target = unwrap(BuckTarget.parse(targetString));
+    assertOptionalEquals(expected, buckTargetLocator.findPathForTarget(target));
+    assertOptionalEquals(
+        asVirtualFile(expected), buckTargetLocator.findVirtualFileForTarget(target));
+  }
 
-    String relativePath = "foo/bar/BUILD";
-    Path expectedPath = cell.getRootPath().resolve(relativePath);
-    expectedPath.toFile().getParentFile().mkdirs();
-    Files.write(expectedPath, new byte[0]);
-    VirtualFile expectedVirtualFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
+  public void testFindTargetInDefaultCell() {
+    checkFindTarget("//foo/bar:baz", createFileInDefaultCell("foo/bar/BUCK"));
+  }
 
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
-
-    BuckTarget target = unwrap(BuckTarget.parse("//foo/bar:baz"));
-    assertOptionalEquals(expectedPath, targetLocator.findPathForTarget(target));
-    assertOptionalEquals(expectedVirtualFile, targetLocator.findVirtualFileForTarget(target));
+  public void testFindTargetInDefaultCellWhenBuildFileNameSpecified() {
+    defaultCell = setDefaultCell(null, null, "BUILD");
+    checkFindTarget("//foo/bar:baz", createFileInDefaultCell("foo/bar/BUILD"));
   }
 
   public void testFindTargetInNamedCell() throws IOException {
-    Cell cell = createCell("foo", "FOOBUCK");
-    buckCellManager.findCellByName("foo");
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
-
-    String relativePath = "bar/baz/FOOBUCK";
-    Path expectedPath = cell.getRootPath().resolve(relativePath);
-    expectedPath.toFile().getParentFile().mkdirs();
-    Files.write(expectedPath, new byte[0]);
-    VirtualFile expectedVirtualFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
-
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
-
-    BuckTarget target = unwrap(BuckTarget.parse("foo//bar/baz:qux"));
-    assertOptionalEquals(expectedPath, targetLocator.findPathForTarget(target));
-    assertOptionalEquals(expectedVirtualFile, targetLocator.findVirtualFileForTarget(target));
+    BuckCell cell = addCell("foo", "x", "FOOBUCK");
+    checkFindTarget("foo//bar/baz:qux", createFile(cell, "bar/baz/FOOBUCK"));
   }
 
   // Test findPathForExtensionFile and findVirtualFileForExtensionFile together
 
-  public void testFindExtensionFileInDefaultCell() throws IOException {
-    Cell cell = createCell(null);
-    buckCellManager.getDefaultCell();
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
-
-    String relativePath = "foo/bar/baz/qux.bzl";
-    Path expectedPath = cell.getRootPath().resolve(relativePath);
-    expectedPath.toFile().getParentFile().mkdirs();
-    Files.write(expectedPath, new byte[0]);
-    VirtualFile expectedVirtualFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
-
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
-
-    BuckTarget target = unwrap(BuckTarget.parse("//foo/bar:baz/qux.bzl"));
-    assertOptionalEquals(expectedPath, targetLocator.findPathForExtensionFile(target));
+  private void checkFindExtensionFile(String targetString, Path expected) {
+    BuckTarget target = unwrap(BuckTarget.parse(targetString));
+    assertOptionalEquals(expected, buckTargetLocator.findPathForExtensionFile(target));
     assertOptionalEquals(
-        expectedVirtualFile, targetLocator.findVirtualFileForExtensionFile(target));
+        asVirtualFile(expected), buckTargetLocator.findVirtualFileForExtensionFile(target));
+  }
+
+  public void testFindExtensionFileInDefaultCell() throws IOException {
+    checkFindExtensionFile("//foo/bar:baz.bzl", createFileInDefaultCell("foo/bar/baz.bzl"));
   }
 
   public void testFindExtensionFileInNamedCell() throws IOException {
-    Cell cell = createCell("foo");
-    buckCellManager.findCellByName("foo");
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
-
-    String relativePath = "bar/baz/qux/quux.bzl";
-    Path expectedPath = cell.getRootPath().resolve(relativePath);
-    expectedPath.toFile().getParentFile().mkdirs();
-    Files.write(expectedPath, new byte[0]);
-    VirtualFile expectedVirtualFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
-
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
-
-    BuckTarget target = unwrap(BuckTarget.parse("foo//bar/baz:qux/quux.bzl"));
-    assertOptionalEquals(expectedPath, targetLocator.findPathForExtensionFile(target));
-    assertOptionalEquals(
-        expectedVirtualFile, targetLocator.findVirtualFileForExtensionFile(target));
+    BuckCell cell = addCell("foo", "x", null);
+    checkFindExtensionFile("foo//bar:baz.bzl", createFile(cell, "bar/baz.bzl"));
   }
 
   // Test findPathForTargetPattern and findVirtualFileForTargetPattern together
 
-  public void testFindPathForTargetPatternInDefaultCell() throws IOException {
-    Cell cell = createCell(null, "BUILD");
-    buckCellManager.getDefaultCell();
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
-
-    String relativePath = "foo/bar/BUILD";
-    Path expectedPathToFile = cell.getRootPath().resolve(relativePath);
-    Path expectedPathToDir = expectedPathToFile.getParent();
-    expectedPathToDir.toFile().mkdirs();
-    Files.write(expectedPathToFile, new byte[0]);
-
-    unwrap(cell.getRootDirectory()).refresh(false, true);
-    VirtualFile expectedVirtualFileToFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
-    VirtualFile expectedVirtualFileToDir = expectedVirtualFileToFile.getParent();
-
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
-
-    BuckTargetPattern explicitTargetPattern = unwrap(BuckTargetPattern.parse("//foo/bar:baz"));
+  public void checkFindForTargetPattern(String patternString, Path expected) {
+    BuckTargetPattern pattern = unwrap(BuckTargetPattern.parse(patternString));
+    assertOptionalEquals(expected, buckTargetLocator.findPathForTargetPattern(pattern));
     assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(explicitTargetPattern));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(explicitTargetPattern));
-
-    BuckTargetPattern implicitTargetPattern = unwrap(BuckTargetPattern.parse("//foo/bar"));
-    assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(implicitTargetPattern));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(implicitTargetPattern));
-
-    BuckTargetPattern allTargetsInPackage = unwrap(BuckTargetPattern.parse("//foo/bar:"));
-    assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(allTargetsInPackage));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(allTargetsInPackage));
-
-    BuckTargetPattern recursiveTarget = unwrap(BuckTargetPattern.parse("//foo/bar/..."));
-    assertOptionalEquals(
-        expectedPathToDir, targetLocator.findPathForTargetPattern(recursiveTarget));
-    assertOptionalEquals(
-        expectedVirtualFileToDir, targetLocator.findVirtualFileForTargetPattern(recursiveTarget));
+        asVirtualFile(expected), buckTargetLocator.findVirtualFileForTargetPattern(pattern));
   }
 
-  public void testFindPathForTargetPatternInNamedCell() throws IOException {
-    Cell cell = createCell("foo", "FOOBUCK");
-    buckCellManager.findCellByName("foo");
-    EasyMock.expectLastCall().andReturn(Optional.of(cell)).anyTimes();
-    EasyMock.replay(buckCellManager);
+  public void testFindForTargetPatternInDefaultCell() throws IOException {
+    Path buildFile = createFileInDefaultCell("foo/bar/BUCK");
+    checkFindForTargetPattern("//foo/bar", buildFile);
+    checkFindForTargetPattern("//foo/bar:", buildFile);
+    checkFindForTargetPattern("//foo/bar:baz", buildFile);
+    checkFindForTargetPattern("//foo/bar/...", buildFile.getParent());
+  }
 
-    String relativePath = "bar/baz/FOOBUCK";
-    Path expectedPathToFile = cell.getRootPath().resolve(relativePath);
-    Path expectedPathToDir = expectedPathToFile.getParent();
-    expectedPathToDir.toFile().mkdirs();
-    Files.write(expectedPathToFile, new byte[0]);
+  public void testFindForTargetPatternInDefaultCellWithNamedBuildfile() throws IOException {
+    defaultCell = setDefaultCell(null, null, "BUILD");
+    Path buildFile = createFileInDefaultCell("foo/bar/BUILD");
+    checkFindForTargetPattern("//foo/bar", buildFile);
+    checkFindForTargetPattern("//foo/bar:", buildFile);
+    checkFindForTargetPattern("//foo/bar:baz", buildFile);
+    checkFindForTargetPattern("//foo/bar/...", buildFile.getParent());
+  }
 
-    unwrap(cell.getRootDirectory()).refresh(false, true);
-    VirtualFile expectedVirtualFileToFile =
-        unwrap(cell.getRootDirectory()).findFileByRelativePath(relativePath);
-    VirtualFile expectedVirtualFileToDir = expectedVirtualFileToFile.getParent();
+  public void testFindForTargetPatternInNamedCell() throws IOException {
+    BuckCell cell = addCell("foo", "x", "FOOBUCK");
 
-    BuckTargetLocatorImpl targetLocator =
-        new BuckTargetLocatorImpl(virtualFileManager, psiManager, buckCellManager);
+    Path buildFile = createFile(cell, "bar/baz/FOOBUCK");
+    checkFindForTargetPattern("foo//bar/baz", buildFile);
+    checkFindForTargetPattern("foo//bar/baz:", buildFile);
+    checkFindForTargetPattern("foo//bar/baz:qux", buildFile);
+    checkFindForTargetPattern("foo//bar/baz/...", buildFile.getParent());
+  }
 
-    BuckTargetPattern explicitTargetPattern = unwrap(BuckTargetPattern.parse("foo//bar/baz:qux"));
-    assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(explicitTargetPattern));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(explicitTargetPattern));
+  // Test findTargetPatternForPath and findTargetPatternForVirtualFile together
 
-    BuckTargetPattern implicitTargetPattern = unwrap(BuckTargetPattern.parse("foo//bar/baz"));
+  public void checkFindTargetPatternFrom(Path path, String expectedPatternString) {
+    BuckTargetPattern expectedPattern = unwrap(BuckTargetPattern.parse(expectedPatternString));
+    assertOptionalEquals(expectedPattern, buckTargetLocator.findTargetPatternForPath(path));
     assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(implicitTargetPattern));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(implicitTargetPattern));
+        expectedPattern, buckTargetLocator.findTargetPatternForVirtualFile(asVirtualFile(path)));
+  }
 
-    BuckTargetPattern allTargetsInPackage = unwrap(BuckTargetPattern.parse("foo//bar/baz:"));
-    assertOptionalEquals(
-        expectedPathToFile, targetLocator.findPathForTargetPattern(allTargetsInPackage));
-    assertOptionalEquals(
-        expectedVirtualFileToFile,
-        targetLocator.findVirtualFileForTargetPattern(allTargetsInPackage));
+  public void testFindTargetPatternFromFileInDefaultCell() {
+    Path buildFileOne = createFileInDefaultCell("one/BUCK");
+    Path buildFileTwo = createFileInDefaultCell("one/two/BUCK");
 
-    BuckTargetPattern recursiveTarget = unwrap(BuckTargetPattern.parse("foo//bar/baz/..."));
+    checkFindTargetPatternFrom(buildFileOne, "//one:");
+    checkFindTargetPatternFrom(buildFileTwo, "//one/two:");
+
+    checkFindTargetPatternFrom(createFileInDefaultCell("a.bzl"), "//:a.bzl");
+    checkFindTargetPatternFrom(createFileInDefaultCell("one/a.bzl"), "//one:a.bzl");
+    checkFindTargetPatternFrom(createFileInDefaultCell("one/two/a.bzl"), "//one/two:a.bzl");
+    checkFindTargetPatternFrom(
+        createFileInDefaultCell("one/two/three/a.bzl"), "//one/two:three/a.bzl");
+  }
+
+  public void testFindTargetPatternFromDirectoryInDefaultCell() {
+    Path rootDir = createFileInDefaultCell(".buckconfig").getParent();
+    Path level1Dir = createFileInDefaultCell("one/BUCK").getParent();
+    Path level2Dir = createFileInDefaultCell("one/two/BUCK").getParent();
+    Path level3Dir = createFileInDefaultCell("one/two/three/x").getParent();
+    Path level4Dir = createFileInDefaultCell("one/two/three/four/y").getParent();
+
+    checkFindTargetPatternFrom(rootDir, "//");
+    checkFindTargetPatternFrom(level1Dir, "//one/");
+    checkFindTargetPatternFrom(level2Dir, "//one/two/");
+    checkFindTargetPatternFrom(level3Dir, "//one/two:three/");
+    checkFindTargetPatternFrom(level4Dir, "//one/two:three/four/");
+  }
+
+  public void testFindTargetPatternFromFileInDefaultCellWithNamedBuildfile() {
+    defaultCell = setDefaultCell(null, null, "BUILD");
+
+    Path buildFileOne = createFileInDefaultCell("one/BUILD");
+    Path buildFileTwo = createFileInDefaultCell("one/two/BUILD");
+
+    checkFindTargetPatternFrom(buildFileOne, "//one:");
+    checkFindTargetPatternFrom(buildFileTwo, "//one/two:");
+  }
+
+  public void testFindTargetPatternFromDirectoryInDefaultCellWithNamedBuildFile() {
+    defaultCell = setDefaultCell(null, null, "BUILD");
+
+    Path rootDir = createFileInDefaultCell(".buckconfig").getParent();
+    Path level1Dir = createFileInDefaultCell("one/BUILD").getParent();
+    Path level2Dir = createFileInDefaultCell("one/two/BUILD").getParent();
+    Path level3Dir = createFileInDefaultCell("one/two/three/x").getParent();
+    Path level4Dir = createFileInDefaultCell("one/two/three/four/y").getParent();
+
+    checkFindTargetPatternFrom(rootDir, "//");
+    checkFindTargetPatternFrom(level1Dir, "//one/");
+    checkFindTargetPatternFrom(level2Dir, "//one/two/");
+    checkFindTargetPatternFrom(level3Dir, "//one/two:three/");
+    checkFindTargetPatternFrom(level4Dir, "//one/two:three/four/");
+  }
+
+  public void testFindTargetPatternFromFileInNamedCell() {
+    BuckCell cell = addCell("foo", "x", "FOO");
+
+    Path buildFileOne = createFile(cell, "one/FOO");
+    Path buildFileTwo = createFile(cell, "one/two/FOO");
+
+    checkFindTargetPatternFrom(buildFileOne, "foo//one:");
+    checkFindTargetPatternFrom(buildFileTwo, "foo//one/two:");
+
+    checkFindTargetPatternFrom(createFile(cell, "a.bzl"), "foo//:a.bzl");
+    checkFindTargetPatternFrom(createFile(cell, "one/a.bzl"), "foo//one:a.bzl");
+    checkFindTargetPatternFrom(createFile(cell, "one/two/a.bzl"), "foo//one/two:a.bzl");
+    checkFindTargetPatternFrom(createFile(cell, "one/two/three/a.bzl"), "foo//one/two:three/a.bzl");
+  }
+
+  public void testFindTargetPatternFromDirectoryInNamedCell() {
+    BuckCell cell = addCell("foo", "x", "FOO");
+
+    Path rootDir = createFile(cell, ".buckconfig").getParent();
+    Path level1Dir = createFile(cell, "one/FOO").getParent();
+    Path level2Dir = createFile(cell, "one/two/FOO").getParent();
+    Path level3Dir = createFile(cell, "one/two/three/x").getParent();
+    Path level4Dir = createFile(cell, "one/two/three/four/y").getParent();
+
+    checkFindTargetPatternFrom(rootDir, "foo//");
+    checkFindTargetPatternFrom(level1Dir, "foo//one/");
+    checkFindTargetPatternFrom(level2Dir, "foo//one/two/");
+    checkFindTargetPatternFrom(level3Dir, "foo//one/two:three/");
+    checkFindTargetPatternFrom(level4Dir, "foo//one/two:three/four/");
+  }
+
+  public void testWhenDirectoriesAreNamedTheSameAsBuildfileName() {
+    /*
+     * For example, the BUCK repo has a directory 'src/java/com/facebook/buck', so on
+     * case-insensitive filesystems, need to be extra-sure to check whether a BUCK
+     * in the path is a file or a directory!
+     */
+
+    BuckCell cell = addCell("foo", "foo", "FOO");
+    Path buildFileOne = createFile(cell, "one/FOO");
+    Path buildFileTwo = createFile(cell, "two/FOO/FOO");
+    Path buildFileThree = createFile(cell, "three/FOO/FOO/FOO");
+
+    // Check files
+    checkFindTargetPatternFrom(buildFileOne, "foo//one:");
+    checkFindTargetPatternFrom(buildFileTwo, "foo//two/FOO:");
+    checkFindTargetPatternFrom(buildFileThree, "foo//three/FOO/FOO:");
+
+    // Check directories with build files
+    checkFindTargetPatternFrom(buildFileOne.getParent(), "foo//one/");
+    checkFindTargetPatternFrom(buildFileTwo.getParent(), "foo//two/FOO/");
+    checkFindTargetPatternFrom(buildFileThree.getParent(), "foo//three/FOO/FOO/");
+
+    // Check directories without build files
+    checkFindTargetPatternFrom(buildFileTwo.getParent().getParent(), "foo//:two/");
+    checkFindTargetPatternFrom(buildFileThree.getParent().getParent(), "foo//:three/FOO/");
+
+    // Check that a directory named the same as the buildfile.name doesn't fool us
+    checkFindTargetPatternFrom(createFile(cell, "one/x/FOO/y"), "foo//one:x/FOO/y");
+  }
+
+  // Check findBuckFileForVirtualFile and findBuckFileForPath together
+  private void checkFindBuckFile(@Nullable Path expectedBuckFilePath, Path sourceFilePath) {
     assertOptionalEquals(
-        expectedPathToDir, targetLocator.findPathForTargetPattern(recursiveTarget));
+        expectedBuckFilePath, buckTargetLocator.findBuckFileForPath(sourceFilePath));
     assertOptionalEquals(
-        expectedVirtualFileToDir, targetLocator.findVirtualFileForTargetPattern(recursiveTarget));
+        asVirtualFile(expectedBuckFilePath),
+        buckTargetLocator.findBuckFileForVirtualFile(asVirtualFile(sourceFilePath)));
+  }
+
+  public void testFindBuckFileInDefaultCell() {
+    Path level0BazelFile = createFileInDefaultCell("defs.bzl");
+    Path level1BuildFile = createFileInDefaultCell("a/BUCK");
+    Path level2BazelFile = createFileInDefaultCell("a/b/defs.bzl");
+    Path level3BuildFile = createFileInDefaultCell("a/b/c/BUCK");
+    Path level4BazelFile = createFileInDefaultCell("a/b/c/d/defs.bzl");
+
+    checkFindBuckFile(null, level0BazelFile);
+    checkFindBuckFile(level1BuildFile, level1BuildFile);
+    checkFindBuckFile(level1BuildFile, level2BazelFile);
+    checkFindBuckFile(level3BuildFile, level3BuildFile);
+    checkFindBuckFile(level3BuildFile, level4BazelFile);
+  }
+
+  public void testFindBuckFileInNamedCell() {
+    BuckCell cell = addCell("foo", "foo", "FOO");
+    Path level0BazelFile = createFile(cell, "defs.bzl");
+    Path level1BuildFile = createFile(cell, "a/FOO");
+    Path level2BazelFile = createFile(cell, "a/b/defs.bzl");
+    Path level3BuildFile = createFile(cell, "a/b/c/FOO");
+    Path level4BazelFile = createFile(cell, "a/b/c/d/defs.bzl");
+
+    checkFindBuckFile(null, level0BazelFile);
+    checkFindBuckFile(level1BuildFile, level1BuildFile);
+    checkFindBuckFile(level1BuildFile, level2BazelFile);
+    checkFindBuckFile(level3BuildFile, level3BuildFile);
+    checkFindBuckFile(level3BuildFile, level4BazelFile);
+  }
+
+  /*
+   * To ensure consistency, check the permutations of resolve methods
+   * (for both VirtualFile/Path, and Targets/Patterns) together
+   */
+  private void checkResolveFrom(
+      String expectedPatternString, Path sourcePath, String sourcePatternString) {
+    BuckTargetPattern expectedPattern = unwrap(BuckTargetPattern.parse(expectedPatternString));
+    BuckTargetPattern sourcePattern = unwrap(BuckTargetPattern.parse(sourcePatternString));
+    assertOptionalEquals(expectedPattern, buckTargetLocator.resolve(sourcePath, sourcePattern));
+    assertOptionalEquals(
+        expectedPattern, buckTargetLocator.resolve(asVirtualFile(sourcePath), sourcePattern));
+
+    expectedPattern
+        .asBuckTarget()
+        .ifPresent(
+            expectedTarget -> {
+              sourcePattern
+                  .asBuckTarget()
+                  .ifPresent(
+                      sourceTarget -> {
+                        assertOptionalEquals(
+                            expectedTarget, buckTargetLocator.resolve(sourcePath, sourceTarget));
+                        assertOptionalEquals(
+                            expectedTarget,
+                            buckTargetLocator.resolve(asVirtualFile(sourcePath), sourceTarget));
+                      });
+            });
+  }
+
+  public void testResolveInDefaultCell() {
+    Path level0BazelFile = createFileInDefaultCell("defs.bzl");
+    Path level1BuildFile = createFileInDefaultCell("a/BUCK");
+    Path level2BazelFile = createFileInDefaultCell("a/b/defs.bzl");
+    Path level3BuildFile = createFileInDefaultCell("a/b/c/BUCK");
+    Path level4BazelFile = createFileInDefaultCell("a/b/c/d/defs.bzl");
+
+    checkResolveFrom("//:defs.bzl", level0BazelFile, ":defs.bzl");
+    checkResolveFrom("//a:defs.bzl", level1BuildFile, ":defs.bzl");
+    checkResolveFrom("//a/b:defs.bzl", level2BazelFile, ":defs.bzl");
+    checkResolveFrom("//a/b/c:defs.bzl", level3BuildFile, ":defs.bzl");
+    checkResolveFrom("//a/b/c/d:defs.bzl", level4BazelFile, ":defs.bzl");
+
+    checkResolveFrom("//:a/b/defs.bzl", level0BazelFile, ":a/b/defs.bzl");
+    checkResolveFrom("//a:b/defs.bzl", level1BuildFile, ":b/defs.bzl");
+    checkResolveFrom("//a/b:defs.bzl", level2BazelFile, ":defs.bzl");
+  }
+
+  public void testResolveInNamedCell() {
+    BuckCell cell = addCell("foo", "foo", "FOO");
+    Path level0BazelFile = createFile(cell, "defs.bzl");
+    Path level1BuildFile = createFile(cell, "a/FOO");
+    Path level2BazelFile = createFile(cell, "a/b/defs.bzl");
+    Path level3BuildFile = createFile(cell, "a/b/c/FOO");
+    Path level4BazelFile = createFile(cell, "a/b/c/d/defs.bzl");
+
+    checkResolveFrom("foo//:defs.bzl", level0BazelFile, ":defs.bzl");
+    checkResolveFrom("foo//a:defs.bzl", level1BuildFile, ":defs.bzl");
+    checkResolveFrom("foo//a/b:defs.bzl", level2BazelFile, ":defs.bzl");
+    checkResolveFrom("foo//a/b/c:defs.bzl", level3BuildFile, ":defs.bzl");
+    checkResolveFrom("foo//a/b/c/d:defs.bzl", level4BazelFile, ":defs.bzl");
+
+    checkResolveFrom("foo//:a/b/defs.bzl", level0BazelFile, ":a/b/defs.bzl");
+    checkResolveFrom("foo//a:b/defs.bzl", level1BuildFile, ":b/defs.bzl");
+    checkResolveFrom("foo//a/b:defs.bzl", level2BazelFile, ":defs.bzl");
   }
 }

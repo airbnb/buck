@@ -76,7 +76,7 @@ public class AppleBundleIntegrationTest {
   private ProjectFilesystem filesystem;
 
   @Before
-  public void setUp() throws InterruptedException {
+  public void setUp() {
     filesystem = TestProjectFilesystems.createProjectFilesystem(tmp.getRoot());
     assumeTrue(Platform.detect() == Platform.MACOS);
     assumeTrue(AppleNativeIntegrationTestUtils.isApplePlatformAvailable(ApplePlatform.MACOSX));
@@ -122,6 +122,25 @@ public class AppleBundleIntegrationTest {
 
     // Non-Swift target shouldn't include Frameworks/
     assertFalse(Files.exists(appPath.resolve("Frameworks")));
+  }
+
+  @Test
+  public void testDisablingFatBinaryCaching() throws IOException {
+    ProjectWorkspace workspace =
+        TestDataHelper.createProjectWorkspaceForScenario(
+            this, "simple_application_bundle_no_debug", tmp);
+    workspace.setUp();
+
+    String bundleTarget =
+        "//:DemoApp#iphonesimulator-x86_64,iphonesimulator-i386,no-debug,no-include-frameworks";
+    String binaryTarget =
+        "//:DemoAppBinary#iphonesimulator-x86_64,iphonesimulator-i386,strip-non-global";
+
+    workspace.enableDirCache();
+    workspace.runBuckBuild("-c", "cxx.cache_links=false", bundleTarget).assertSuccess();
+    workspace.runBuckCommand("clean", "--keep-cache");
+    workspace.runBuckBuild("-c", "cxx.cache_links=false", bundleTarget).assertSuccess();
+    workspace.getBuildLog().assertTargetBuiltLocally(binaryTarget);
   }
 
   @Test

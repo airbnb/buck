@@ -37,7 +37,6 @@ import com.facebook.buck.step.Step;
 import com.facebook.buck.step.TargetDevice;
 import com.facebook.buck.step.fs.WriteFileStep;
 import com.facebook.buck.util.Optionals;
-import com.facebook.buck.util.types.Either;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -65,7 +64,7 @@ public class RobolectricTest extends JavaTest {
   private final AndroidPlatformTarget androidPlatformTarget;
   private final Optional<DummyRDotJava> optionalDummyRDotJava;
   private final Optional<SourcePath> robolectricManifest;
-  private final Optional<String> robolectricRuntimeDependency;
+  private final Optional<SourcePath> robolectricRuntimeDependency;
 
   /**
    * Used by robolectric test runner to get list of resource directories that can be used for tests.
@@ -93,7 +92,7 @@ public class RobolectricTest extends JavaTest {
       Set<String> labels,
       Set<String> contacts,
       TestType testType,
-      List<String> vmArgs,
+      List<Arg> vmArgs,
       Map<String, String> nativeLibsEnvironment,
       Optional<DummyRDotJava> optionalDummyRDotJava,
       Optional<Long> testRuleTimeoutMs,
@@ -104,7 +103,7 @@ public class RobolectricTest extends JavaTest {
       Optional<Level> stdOutLogLevel,
       Optional<Level> stdErrLogLevel,
       Optional<SourcePath> unbundledResourcesRoot,
-      Optional<String> robolectricRuntimeDependency,
+      Optional<SourcePath> robolectricRuntimeDependency,
       Optional<SourcePath> robolectricManifest,
       boolean passDirectoriesInFile,
       Tool javaRuntimeLauncher) {
@@ -113,12 +112,14 @@ public class RobolectricTest extends JavaTest {
         projectFilesystem,
         buildRuleParams,
         compiledTestsLibrary,
-        optionalDummyRDotJava
-            .map(
-                r ->
-                    ImmutableSet.<Either<SourcePath, Path>>of(
-                        Either.ofLeft(r.getSourcePathToOutput())))
-            .orElse(ImmutableSet.of()),
+        Optional.of(
+            resolver ->
+                optionalDummyRDotJava
+                    .map(
+                        dummyRDotJava ->
+                            ImmutableList.of(
+                                resolver.getAbsolutePath(dummyRDotJava.getSourcePathToOutput())))
+                    .orElseGet(ImmutableList::of)),
         labels,
         contacts,
         testType,
@@ -203,7 +204,10 @@ public class RobolectricTest extends JavaTest {
             vmArgsBuilder.add(
                 String.format("-D%s=%s", ROBOLECTRIC_MANIFEST, pathResolver.getAbsolutePath(s))));
     robolectricRuntimeDependency.ifPresent(
-        s -> vmArgsBuilder.add(String.format("-D%s=%s", ROBOLECTRIC_DEPENDENCY_DIR, s)));
+        s ->
+            vmArgsBuilder.add(
+                String.format(
+                    "-D%s=%s", ROBOLECTRIC_DEPENDENCY_DIR, pathResolver.getAbsolutePath(s))));
   }
 
   @VisibleForTesting

@@ -67,6 +67,7 @@ import com.facebook.buck.cxx.CxxSymlinkTreeHeaders;
 import com.facebook.buck.cxx.FrameworkDependencies;
 import com.facebook.buck.cxx.HasAppleDebugSymbolDeps;
 import com.facebook.buck.cxx.HeaderSymlinkTreeWithHeaderMap;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
 import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.cxx.toolchain.CxxPlatformsProvider;
 import com.facebook.buck.cxx.toolchain.HeaderMode;
@@ -194,6 +195,7 @@ public class AppleLibraryDescription
   private final XCodeDescriptions xcodeDescriptions;
   private final Optional<SwiftLibraryDescription> swiftDelegate;
   private final AppleConfig appleConfig;
+  private final CxxBuckConfig cxxBuckConfig;
   private final SwiftBuckConfig swiftBuckConfig;
   private final CxxLibraryImplicitFlavors cxxLibraryImplicitFlavors;
   private final CxxLibraryFlavored cxxLibraryFlavored;
@@ -205,6 +207,7 @@ public class AppleLibraryDescription
       XCodeDescriptions xcodeDescriptions,
       SwiftLibraryDescription swiftDelegate,
       AppleConfig appleConfig,
+      CxxBuckConfig cxxBuckConfig,
       SwiftBuckConfig swiftBuckConfig,
       CxxLibraryImplicitFlavors cxxLibraryImplicitFlavors,
       CxxLibraryFlavored cxxLibraryFlavored,
@@ -219,6 +222,7 @@ public class AppleLibraryDescription
     this.swiftDelegate =
         appleConfig.shouldUseSwiftDelegate() ? Optional.of(swiftDelegate) : Optional.empty();
     this.appleConfig = appleConfig;
+    this.cxxBuckConfig = cxxBuckConfig;
     this.swiftBuckConfig = swiftBuckConfig;
   }
 
@@ -436,8 +440,10 @@ public class AppleLibraryDescription
         ImmutableList.of(),
         Optional.empty(),
         Optional.empty(),
+        Optional.empty(),
         appleConfig.getCodesignTimeout(),
-        swiftBuckConfig.getCopyStdlibToFrameworks());
+        swiftBuckConfig.getCopyStdlibToFrameworks(),
+        cxxBuckConfig.shouldCacheStrip());
   }
 
   /**
@@ -503,6 +509,7 @@ public class AppleLibraryDescription
             context.getProjectFilesystem(),
             graphBuilder,
             flavoredStripStyle.orElse(StripStyle.NON_GLOBAL_SYMBOLS),
+            cxxBuckConfig.shouldCacheStrip(),
             unstrippedBinaryRule,
             representativePlatform,
             Optional.empty());
@@ -517,7 +524,8 @@ public class AppleLibraryDescription
             .getValue(buildTarget)
             .orElse(appleConfig.getDefaultDebugInfoFormatForLibraries()),
         cxxPlatformsProvider,
-        getAppleCxxPlatformDomain());
+        getAppleCxxPlatformDomain(),
+        cxxBuckConfig.shouldCacheStrip());
   }
 
   private <A extends AppleNativeTargetDescriptionArg> BuildRule requireUnstrippedBuildRule(
@@ -561,7 +569,8 @@ public class AppleLibraryDescription
           params,
           graphBuilder,
           multiarchFileInfo.get(),
-          thinRules.build());
+          thinRules.build(),
+          cxxBuckConfig);
     } else {
       return requireSingleArchUnstrippedBuildRule(
           context,
@@ -1124,11 +1133,8 @@ public class AppleLibraryDescription
 
     BuildTarget targetWithPlatform = target.withAppendedFlavors(platform.getFlavor());
     Optional<SwiftPlatform> swiftPlatform = swiftPlatformFlavorDomain.getValue(targetWithPlatform);
-    if (swiftPlatform.isPresent()) {
-      return Optional.of(ImmutableList.of(new SwiftRuntimeNativeLinkable(swiftPlatform.get())));
-    }
-
-    return Optional.empty();
+    return swiftPlatform.map(
+        theSwiftPlatform -> ImmutableList.of(new SwiftRuntimeNativeLinkable(theSwiftPlatform)));
   }
 
   @Override

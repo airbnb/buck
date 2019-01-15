@@ -18,28 +18,26 @@ package com.facebook.buck.intellij.ideabuck.config;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.intellij.openapi.components.AbstractProjectComponent;
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.ProjectComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 
 /** Project-level preferences. */
 @State(
     name = "BuckProjectSettingsProvider",
     storages = {@Storage("ideabuck.xml")})
-public class BuckProjectSettingsProvider extends AbstractProjectComponent
-    implements PersistentStateComponent<BuckProjectSettingsProvider.State> {
+public class BuckProjectSettingsProvider
+    implements ProjectComponent, PersistentStateComponent<BuckProjectSettingsProvider.State> {
 
-  private BuckExecutableDetector buckExecutableDetector;
+  private Project project;
+  private BuckExecutableSettingsProvider buckExecutableSettingsProvider;
+  private BuckCellSettingsProvider buckCellSettingsProvider;
   private State state = new State();
   private static final Logger LOG = Logger.getInstance(BuckProjectSettingsProvider.class);
 
@@ -48,17 +46,24 @@ public class BuckProjectSettingsProvider extends AbstractProjectComponent
   }
 
   public BuckProjectSettingsProvider(Project project) {
-    this(project, BuckExecutableDetector.newInstance());
+    this(
+        project,
+        BuckCellSettingsProvider.getInstance(project),
+        BuckExecutableSettingsProvider.getInstance(project));
   }
 
   @VisibleForTesting
-  BuckProjectSettingsProvider(Project project, BuckExecutableDetector buckExecutableDetector) {
-    super(project);
-    this.buckExecutableDetector = buckExecutableDetector;
+  BuckProjectSettingsProvider(
+      Project project,
+      BuckCellSettingsProvider buckCellSettingsProvider,
+      BuckExecutableSettingsProvider buckExecutableSettingsProvider) {
+    this.project = project;
+    this.buckExecutableSettingsProvider = buckExecutableSettingsProvider;
+    this.buckCellSettingsProvider = buckCellSettingsProvider;
   }
 
   public Project getProject() {
-    return myProject;
+    return project;
   }
 
   @Override
@@ -69,82 +74,92 @@ public class BuckProjectSettingsProvider extends AbstractProjectComponent
   @Override
   public void loadState(State state) {
     this.state = state;
+    if (state.cells != null) {
+      buckCellSettingsProvider.setCells(state.cells);
+      state.cells = null;
+    }
+    if (state.adbExecutable != null || state.buckExecutable != null) {
+      if (!buckExecutableSettingsProvider.getAdbExecutableOverride().isPresent()) {
+        buckExecutableSettingsProvider.setAdbExecutableOverride(
+            Optional.ofNullable(state.adbExecutable));
+        state.adbExecutable = null;
+      }
+      if (!buckExecutableSettingsProvider.getBuckExecutableOverride().isPresent()) {
+        buckExecutableSettingsProvider.setBuckExecutableOverride(
+            Optional.ofNullable(state.buckExecutable));
+        state.buckExecutable = null;
+      }
+    }
   }
 
   /**
    * Returns the path to a Buck executable that should explicitly be preferred to {@link
    * BuckExecutableDetector#getBuckExecutable()} for this project.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#getBuckExecutableOverride()} directly.
    */
+  @Deprecated
   public Optional<String> getBuckExecutableOverride() {
-    return Optional.ofNullable(state.buckExecutable);
+    return buckExecutableSettingsProvider.getBuckExecutableOverride();
   }
 
   /**
    * Sets the path of a Buck executable that should explicitly be preferred to {@link
    * BuckExecutableDetector#getBuckExecutable()} for this project.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#setBuckExecutableOverride(Optional)}
+   *     directly.
    */
+  @Deprecated
   public void setBuckExecutableOverride(Optional<String> buckExecutableOverride) {
-    this.state.buckExecutable = buckExecutableOverride.orElse(null);
+    buckExecutableSettingsProvider.setBuckExecutableOverride(buckExecutableOverride);
   }
 
   /**
    * Returns a path to a Buck executable to use with this project, or {@code null} if none can be
    * found.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#resolveBuckExecutable()} directly.
    */
+  @Deprecated
   @Nullable
   public String resolveBuckExecutable() {
-    String executable = state.buckExecutable;
-    if (executable == null) {
-      try {
-        executable = buckExecutableDetector.getBuckExecutable();
-      } catch (RuntimeException e) {
-        // let the user insert the path to the executable
-        LOG.error(
-            e
-                + ". You can specify the buck path from "
-                + "Preferences/Settings > Tools > Buck > Buck Executable Path",
-            e);
-      }
-    }
-    return executable;
+    return buckExecutableSettingsProvider.resolveBuckExecutable();
   }
 
   /**
    * Returns the path to an adb executable that should explicitly be preferred to {@link
    * BuckExecutableDetector#getAdbExecutable()} for this project.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#getAdbExecutableOverride()} directly.
    */
+  @Deprecated
   public Optional<String> getAdbExecutableOverride() {
-    return Optional.ofNullable(state.adbExecutable);
+    return buckExecutableSettingsProvider.getAdbExecutableOverride();
   }
 
   /**
    * Sets the path of an adb executable that should explicitly be preferred to {@link
    * BuckExecutableDetector#getAdbExecutable()} for this project.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#setAdbExecutableOverride(Optional)}
+   *     directly.
    */
+  @Deprecated
   public void setAdbExecutableOverride(Optional<String> adbExecutableOverride) {
-    this.state.adbExecutable = adbExecutableOverride.orElse(null);
+    buckExecutableSettingsProvider.setAdbExecutableOverride(adbExecutableOverride);
   }
 
   /**
    * Returns a path to a Buck executable to use with this project, or {@code null} if none can be
    * found.
+   *
+   * @deprecated Use {@link BuckExecutableSettingsProvider#resolveAdbExecutable()} directly.
    */
+  @Deprecated
   @Nullable
   public String resolveAdbExecutable() {
-    String executable = state.adbExecutable;
-    if (executable == null) {
-      try {
-        executable = buckExecutableDetector.getAdbExecutable();
-      } catch (RuntimeException e) {
-        // let the user insert the path to the executable
-        LOG.error(
-            e
-                + ". You can specify the adb path from "
-                + "Preferences/Settings > Tools > Buck > Adb Executable Path",
-            e);
-      }
-    }
-    return executable;
+    return buckExecutableSettingsProvider.resolveAdbExecutable();
   }
 
   public boolean isShowDebugWindow() {
@@ -195,25 +210,6 @@ public class BuckProjectSettingsProvider extends AbstractProjectComponent
     state.customizedInstallSettingCommand = customizedInstallSettingCommand;
   }
 
-  /** Returns a stream of buck cells in this project. */
-  public Stream<BuckCell> getCells() {
-    return state.cells.stream().map(BuckCell::copy);
-  }
-
-  /** Returns a list of buck cell names in this project. */
-  public List<String> getCellNames() {
-    return state.cells.stream().map(BuckCell::getName).collect(Collectors.toList());
-  }
-
-  /** Sets a list of buck cells in this project. */
-  public void setCells(List<BuckCell> cells) {
-    ImmutableList.Builder<BuckCell> builder = ImmutableList.builder();
-    for (BuckCell cell : cells) {
-      builder.add(cell.copy());
-    }
-    this.state.cells = builder.build();
-  }
-
   @Override
   public void initComponent() {}
 
@@ -239,10 +235,18 @@ public class BuckProjectSettingsProvider extends AbstractProjectComponent
     /** Remember the last used buck alias. */
     @Nullable public String lastAlias = null;
 
-    /** Optional buck executable to prefer to {@link BuckExecutableDetector#getBuckExecutable()}. */
+    /**
+     * Optional buck executable to prefer to {@link BuckExecutableDetector#getBuckExecutable()}.
+     *
+     * @deprecated Moved to {@link BuckExecutableSettingsProvider.State#buckExecutable}.
+     */
     @Nullable public String buckExecutable = null;
 
-    /** Optional adb executable to prefer to {@link BuckExecutableDetector#getAdbExecutable()}. */
+    /**
+     * Optional adb executable to prefer to {@link BuckExecutableDetector#getAdbExecutable()}.
+     *
+     * @deprecated Moved to {@link BuckExecutableSettingsProvider.State#adbExecutable}.
+     */
     @Nullable public String adbExecutable = null;
 
     /** Enable the debug window for the plugin. */
@@ -266,8 +270,12 @@ public class BuckProjectSettingsProvider extends AbstractProjectComponent
     /** User's customized install command string, e.g. "-a -b -c". */
     public String customizedInstallSettingCommand = "";
 
-    /** Buck cells supported in this project. */
-    public List<BuckCell> cells = Lists.newArrayList(new BuckCell());
+    /**
+     * Buck cells supported in this project.
+     *
+     * @deprecated Moved to {@link BuckCellSettingsProvider.State#cells}.
+     */
+    @Deprecated @Nullable public List<BuckCell> cells = null;
 
     @Override
     public boolean equals(Object o) {

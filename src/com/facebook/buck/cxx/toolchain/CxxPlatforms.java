@@ -42,6 +42,8 @@ public class CxxPlatforms {
   private static final ImmutableList<String> DEFAULT_CXXPPFLAGS = ImmutableList.of();
   private static final ImmutableList<String> DEFAULT_CUDAFLAGS = ImmutableList.of();
   private static final ImmutableList<String> DEFAULT_CUDAPPFLAGS = ImmutableList.of();
+  private static final ImmutableList<String> DEFAULT_HIPFLAGS = ImmutableList.of();
+  private static final ImmutableList<String> DEFAULT_HIPPPFLAGS = ImmutableList.of();
   private static final ImmutableList<String> DEFAULT_ASMFLAGS = ImmutableList.of();
   private static final ImmutableList<String> DEFAULT_ASMPPFLAGS = ImmutableList.of();
   private static final ImmutableList<String> DEFAULT_LDFLAGS = ImmutableList.of();
@@ -86,12 +88,15 @@ public class CxxPlatforms {
       Iterable<String> ldFlags,
       Tool strip,
       ArchiverProvider ar,
+      ArchiveContents archiveContents,
       Optional<ToolProvider> ranlib,
       SymbolNameTool nm,
       ImmutableList<String> asflags,
       ImmutableList<String> asppflags,
       ImmutableList<String> cflags,
       ImmutableList<String> cppflags,
+      ImmutableList<String> cxxflags,
+      ImmutableList<String> cxxppflags,
       String sharedLibraryExtension,
       String sharedLibraryVersionedExtensionFormat,
       String staticLibraryExtension,
@@ -115,6 +120,8 @@ public class CxxPlatforms {
         .setCxxpp(config.getCxxpp().orElse(cxxpp))
         .setCuda(config.getCuda())
         .setCudapp(config.getCudapp())
+        .setHip(config.getHip())
+        .setHippp(config.getHippp())
         .setAsm(config.getAsm())
         .setAsmpp(config.getAsmpp())
         .setLd(config.getLinkerProvider(ld.getType()).orElse(ld))
@@ -150,12 +157,14 @@ public class CxxPlatforms {
               }
             }));
 
+    builder.setArchiveContents(config.getArchiveContents().orElse(archiveContents));
+
     builder.setSharedLibraryInterfaceParams(getSharedLibraryInterfaceParams(config, platform));
 
     builder.addAllCflags(cflags);
-    builder.addAllCxxflags(cflags);
+    builder.addAllCxxflags(cxxflags);
     builder.addAllCppflags(cppflags);
-    builder.addAllCxxppflags(cppflags);
+    builder.addAllCxxppflags(cxxppflags);
     builder.addAllAsflags(asflags);
     builder.addAllAsppflags(asppflags);
     CxxPlatforms.addToolFlagsFromConfig(config, builder);
@@ -182,12 +191,15 @@ public class CxxPlatforms {
         defaultPlatform.getLdflags(),
         defaultPlatform.getStrip(),
         defaultPlatform.getAr(),
+        defaultPlatform.getArchiveContents(),
         defaultPlatform.getRanlib(),
         defaultPlatform.getSymbolNameTool(),
         defaultPlatform.getAsflags(),
         defaultPlatform.getAsppflags(),
         defaultPlatform.getCflags(),
         defaultPlatform.getCppflags(),
+        defaultPlatform.getCxxflags(),
+        defaultPlatform.getCxxppflags(),
         defaultPlatform.getSharedLibraryExtension(),
         defaultPlatform.getSharedLibraryVersionedExtensionFormat(),
         defaultPlatform.getStaticLibraryExtension(),
@@ -234,6 +246,8 @@ public class CxxPlatforms {
         .addAllCxxppflags(config.getCxxppflags().orElse(DEFAULT_CXXPPFLAGS))
         .addAllCudaflags(config.getCudaflags().orElse(DEFAULT_CUDAFLAGS))
         .addAllCudappflags(config.getCudappflags().orElse(DEFAULT_CUDAPPFLAGS))
+        .addAllHipflags(config.getHipflags().orElse(DEFAULT_HIPFLAGS))
+        .addAllHipppflags(config.getHipppflags().orElse(DEFAULT_HIPPPFLAGS))
         .addAllAsmflags(config.getAsmflags().orElse(DEFAULT_ASMFLAGS))
         .addAllAsmppflags(config.getAsmppflags().orElse(DEFAULT_ASMPPFLAGS))
         .addAllLdflags(config.getLdflags().orElse(DEFAULT_LDFLAGS))
@@ -277,6 +291,12 @@ public class CxxPlatforms {
     }
     if (cxxPlatform.getCuda().isPresent()) {
       deps.addAll(cxxPlatform.getCuda().get().getParseTimeDeps());
+    }
+    if (cxxPlatform.getHippp().isPresent()) {
+      deps.addAll(cxxPlatform.getHippp().get().getParseTimeDeps());
+    }
+    if (cxxPlatform.getHip().isPresent()) {
+      deps.addAll(cxxPlatform.getHip().get().getParseTimeDeps());
     }
     if (cxxPlatform.getAsmpp().isPresent()) {
       deps.addAll(cxxPlatform.getAsmpp().get().getParseTimeDeps());

@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+# Copyright 2018-present Facebook, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
 
 from __future__ import print_function
 
@@ -61,7 +75,7 @@ THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 # Kill all buck processes
 def killall_buck(reporter):
     # Linux or macOS
-    if os.name != "posix":
+    if os.name != "posix" and os.name != "nt":
         message = "killall is not implemented on: " + os.name
         logging.error(message)
         reporter.status_message = message
@@ -93,7 +107,9 @@ def _get_java_version(java_path):
     Information is provided by java tool and parsing is based on
     http://www.oracle.com/technetwork/java/javase/versioning-naming-139433.html
     """
-    java_version = check_output([java_path, "-version"], stderr=subprocess.STDOUT)
+    java_version = check_output(
+        [java_path, "-version"], stderr=subprocess.STDOUT
+    ).decode("utf-8")
     # extract java version from a string like 'java version "1.8.0_144"'
     match = re.search('java version "(?P<version>.+)"', java_version)
     if not match:
@@ -168,11 +184,11 @@ def main(argv, reporter):
     java_version_status_queue = Queue(maxsize=1)
     required_java_version = "8"
 
-    java10_test_mode_arg = "--java10-test-mode"
-    java10_test_mode = java10_test_mode_arg in argv
-    if java10_test_mode:
-        argv.remove(java10_test_mode_arg)
-        required_java_version = "10"
+    java11_test_mode_arg = "--java11-test-mode"
+    java11_test_mode = java11_test_mode_arg in argv
+    if java11_test_mode:
+        argv.remove(java11_test_mode_arg)
+        required_java_version = "11"
 
     _try_to_verify_java_version_off_thread(
         java_version_status_queue, required_java_version
@@ -208,7 +224,7 @@ def main(argv, reporter):
                     if argv[1:] == ["kill"]:
                         buck_repo.kill_buckd()
                         return ExitCode.SUCCESS
-                    return buck_repo.launch_buck(build_id, argv, java10_test_mode)
+                    return buck_repo.launch_buck(build_id, argv, java11_test_mode)
     finally:
         if tracing_dir:
             Tracing.write_to_dir(tracing_dir, build_id)

@@ -17,6 +17,7 @@
 package com.facebook.buck.features.apple.project;
 
 import static com.facebook.buck.apple.AppleBundleDescription.WATCH_OS_FLAVOR;
+import static com.facebook.buck.cxx.toolchain.CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR;
 import static com.facebook.buck.features.apple.project.ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -148,6 +149,7 @@ import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -191,7 +193,7 @@ public class ProjectGeneratorTest {
   private Path rootPath;
 
   @Before
-  public void setUp() throws InterruptedException, IOException {
+  public void setUp() throws IOException {
     assumeTrue(Platform.detect() == Platform.MACOS || Platform.detect() == Platform.LINUX);
     clock = SettableFakeClock.DO_NOT_CARE;
     fakeProjectFilesystem = new FakeProjectFilesystem(clock);
@@ -268,6 +270,73 @@ public class ProjectGeneratorTest {
   }
 
   @Test
+  public void testProjectWithSharedBundleDep() throws IOException {
+    BuildTarget libraryTarget = BuildTargetFactory.newInstance(rootPath, "//foo", "lib");
+    BuildTarget bundleTarget = BuildTargetFactory.newInstance(rootPath, "//foo", "sharedFramework");
+    BuildTarget sharedLibTarget = BuildTargetFactory.newInstance(rootPath, "//foo:shared#shared");
+
+    TargetNode<?> bundleNode =
+        AppleBundleBuilder.createBuilder(bundleTarget)
+            .setBinary(sharedLibTarget)
+            .setExtension(Either.ofLeft(AppleBundleExtension.FRAMEWORK))
+            .setInfoPlist(FakeSourcePath.of("Info.plist"))
+            .setProductName(Optional.of("shared"))
+            .build();
+
+    TargetNode<?> libraryNode =
+        AppleLibraryBuilder.createBuilder(libraryTarget)
+            .setConfigs(ImmutableSortedMap.of("Debug", ImmutableMap.of()))
+            .setSrcs(ImmutableSortedSet.of(SourceWithFlags.of(FakeSourcePath.of("foo.c"))))
+            .setDeps(ImmutableSortedSet.of(bundleTarget, sharedLibTarget))
+            .build();
+
+    TargetNode<?> sharedLibNode =
+        AppleLibraryBuilder.createBuilder(sharedLibTarget)
+            .setConfigs(ImmutableSortedMap.of("Debug", ImmutableMap.of()))
+            .build();
+
+    ImmutableSet<TargetNode<?>> nodes = ImmutableSet.of(libraryNode, bundleNode, sharedLibNode);
+    ProjectGenerator projectGenerator =
+        createProjectGenerator(
+            nodes,
+            nodes,
+            ProjectGeneratorOptions.builder().build(),
+            ImmutableSet.of(InternalFlavor.of("iphonesimulator-x86_64")),
+            Optional.of(ImmutableMap.of(sharedLibTarget, bundleNode)));
+
+    projectGenerator.createXcodeProjects();
+    PBXProject project = projectGenerator.getGeneratedProject();
+    assertEquals(project.getMainGroup().getChildren().size(), 5);
+    assertEquals(project.getTargets().size(), 3);
+  }
+
+  @Test
+  public void testSwapWithSharedBundes() throws IOException {
+    BuildTarget sharedLibrary = BuildTargetFactory.newInstance(rootPath, "//foo:shared#shared");
+    BuildTarget bundleTarget = BuildTargetFactory.newInstance(rootPath, "//foo", "sharedFramework");
+
+    TargetNode<?> bundleNode =
+        AppleBundleBuilder.createBuilder(bundleTarget)
+            .setBinary(sharedLibrary)
+            .setExtension(Either.ofLeft(AppleBundleExtension.FRAMEWORK))
+            .setInfoPlist(FakeSourcePath.of("Info.plist"))
+            .setProductName(Optional.of("shared"))
+            .build();
+
+    TargetNode<?> sharedNode = AppleLibraryBuilder.createBuilder(sharedLibrary).build();
+
+    ImmutableMap<BuildTarget, TargetNode<?>> sharedLibraryToBundle =
+        ImmutableMap.of(sharedLibrary, bundleNode);
+
+    FluentIterable<TargetNode<?>> input = FluentIterable.of(sharedNode);
+    FluentIterable<TargetNode<?>> output =
+        ProjectGenerator.swapSharedLibrariesForBundles(input, sharedLibraryToBundle);
+    assertTrue(output.contains(bundleNode));
+    assertFalse(output.contains(sharedNode));
+    assertEquals(output.size(), 1);
+  }
+
+  @Test
   public void testProjectStructureWithDuplicateBundle() throws IOException {
     BuildTarget libraryTarget = BuildTargetFactory.newInstance(rootPath, "//foo:lib");
     BuildTarget bundleTarget = BuildTargetFactory.newInstance(rootPath, "//foo:bundle");
@@ -306,7 +375,8 @@ public class ProjectGeneratorTest {
             nodes,
             ProjectGeneratorOptions.builder().build(),
             ImmutableSet.of(
-                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")));
+                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -321,7 +391,7 @@ public class ProjectGeneratorTest {
   }
 
   @Test
-  public void testPlatformSourcesAndHeaders() throws IOException {
+  public void testPlatformSourcesAndHeaders() {
     SourceWithFlags androidSource =
         SourceWithFlags.builder().setSourcePath(FakeSourcePath.of("androidFile.cpp")).build();
     SourceWithFlags iOSAndSimulatorSource =
@@ -730,7 +800,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(frameworkLibNode, frameworkBundleNode, appBinaryNode, appBundleNode),
             ImmutableSet.of(frameworkBundleNode, appBinaryNode, appBundleNode),
             ProjectGeneratorOptions.builder().build(),
-            ImmutableSet.of());
+            ImmutableSet.of(),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -941,7 +1012,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(libNode, frameworkNode),
             ImmutableSet.of(frameworkNode),
             ProjectGeneratorOptions.builder().build(),
-            ImmutableSet.of());
+            ImmutableSet.of(),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -1063,7 +1135,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(node),
             ImmutableSet.of(node),
             ProjectGeneratorOptions.builder().build(),
-            ImmutableSet.of(simulator));
+            ImmutableSet.of(simulator),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -1196,7 +1269,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(node, privateGeneratedNode, publicGeneratedNode),
             ImmutableSet.of(node, privateGeneratedNode, publicGeneratedNode),
             ProjectGeneratorOptions.builder().build(),
-            ImmutableSet.of(simulator));
+            ImmutableSet.of(simulator),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -1736,7 +1810,8 @@ public class ProjectGeneratorTest {
             allNodes,
             allNodes,
             ProjectGeneratorOptions.builder().setShouldUseAbsoluteHeaderMapPaths(true).build(),
-            ImmutableSet.of());
+            ImmutableSet.of(),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -2070,7 +2145,7 @@ public class ProjectGeneratorTest {
     BuildTarget buildTarget = BuildTargetFactory.newInstance(rootPath, "//foo", "lib");
     TargetNode<?> node =
         AppleLibraryBuilder.createBuilder(buildTarget)
-            .setConfigs(ImmutableSortedMap.of("Debug", ImmutableMap.of()))
+            .setConfigs(ImmutableSortedMap.of("RandomConfig", ImmutableMap.of()))
             .setSrcs(
                 ImmutableSortedSet.of(
                     SourceWithFlags.of(FakeSourcePath.of("foo.m"), ImmutableList.of("-foo")),
@@ -2088,7 +2163,7 @@ public class ProjectGeneratorTest {
     assertThat(target.isa(), equalTo("PBXNativeTarget"));
     assertThat(target.getProductType(), equalTo(ProductTypes.STATIC_LIBRARY));
 
-    assertHasConfigurations(target, "Debug");
+    assertHasConfigurations(target, "RandomConfig");
     assertEquals("Should have exact number of build phases", 1, target.getBuildPhases().size());
     assertHasSingletonSourcesPhaseWithSourcesAndFlags(
         target,
@@ -2143,7 +2218,7 @@ public class ProjectGeneratorTest {
         requiredBuildTargets,
         hasItem(
             libTarget.withFlavors(
-                HalideLibraryDescription.HALIDE_COMPILE_FLAVOR, DEFAULT_PLATFORM.getFlavor())));
+                HalideLibraryDescription.HALIDE_COMPILE_FLAVOR, DEFAULT_PLATFORM_FLAVOR)));
   }
 
   @Test
@@ -3077,15 +3152,12 @@ public class ProjectGeneratorTest {
         ProjectGeneratorTestUtils.getBuildSettings(projectFilesystem, buildTarget, target, "Debug");
 
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -ffoo -fbar "
-            + "-Wno-deprecated -Wno-conversion -ffoo -fbar",
+        "$(inherited) " + "-Wno-deprecated -Wno-conversion -ffoo -fbar",
         settings.get("OTHER_CFLAGS"));
     assertEquals(
-        "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo -fbar "
-            + "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo -fbar",
+        "$(inherited) " + "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo -fbar",
         settings.get("OTHER_CPLUSPLUSFLAGS"));
-    assertEquals(
-        "-fatal_warnings -ObjC -lbaz -fatal_warnings -ObjC -lbaz", settings.get("OTHER_LDFLAGS"));
+    assertEquals("$(inherited) -fatal_warnings -ObjC -lbaz", settings.get("OTHER_LDFLAGS"));
   }
 
   @Test
@@ -3125,7 +3197,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(node),
             ProjectGeneratorOptions.builder().build(),
             ImmutableSet.of(
-                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")));
+                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -3135,25 +3208,21 @@ public class ProjectGeneratorTest {
     ImmutableMap<String, String> settings =
         ProjectGeneratorTestUtils.getBuildSettings(projectFilesystem, buildTarget, target, "Debug");
 
+    assertEquals("$(inherited) -Wno-deprecated -Wno-conversion", settings.get("OTHER_CFLAGS"));
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -Wno-deprecated -Wno-conversion",
-        settings.get("OTHER_CFLAGS"));
-    assertEquals(
-        "-Wundeclared-selector -Wno-objc-designated-initializers "
-            + "-Wundeclared-selector -Wno-objc-designated-initializers",
+        "$(inherited) " + "-Wundeclared-selector -Wno-objc-designated-initializers",
         settings.get("OTHER_CPLUSPLUSFLAGS"));
-    assertEquals("-fatal_warnings -ObjC -fatal_warnings -ObjC", settings.get("OTHER_LDFLAGS"));
+    assertEquals("$(inherited) -fatal_warnings -ObjC", settings.get("OTHER_LDFLAGS"));
 
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone "
-            + "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone",
+        "$(inherited) " + "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone",
         settings.get("OTHER_CFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(
-        "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo-iphone -fbar-iphone "
+        "$(inherited) "
             + "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo-iphone -fbar-iphone",
         settings.get("OTHER_CPLUSPLUSFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(
-        "-fatal_warnings -ObjC -lbaz-iphone -fatal_warnings -ObjC -lbaz-iphone",
+        "$(inherited) -fatal_warnings -ObjC -lbaz-iphone",
         settings.get("OTHER_LDFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
   }
 
@@ -3176,8 +3245,7 @@ public class ProjectGeneratorTest {
     ImmutableMap<String, String> settings =
         ProjectGeneratorTestUtils.getBuildSettings(projectFilesystem, buildTarget, target, "Debug");
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -DHELLO -Wno-deprecated -Wno-conversion -DHELLO",
-        settings.get("OTHER_CFLAGS"));
+        "$(inherited) -Wno-deprecated -Wno-conversion -DHELLO", settings.get("OTHER_CFLAGS"));
   }
 
   @Test
@@ -3243,7 +3311,8 @@ public class ProjectGeneratorTest {
             ImmutableSet.of(node, dependentNode),
             ProjectGeneratorOptions.builder().build(),
             ImmutableSet.of(
-                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")));
+                InternalFlavor.of("iphonesimulator-x86_64"), InternalFlavor.of("macosx-x86_64")),
+            Optional.empty());
 
     projectGenerator.createXcodeProjects();
 
@@ -3254,11 +3323,10 @@ public class ProjectGeneratorTest {
         ProjectGeneratorTestUtils.getBuildSettings(projectFilesystem, buildTarget, target, "Debug");
 
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -fbar-iphone -Wno-deprecated -Wno-conversion -fbar-iphone",
+        "$(inherited) -Wno-deprecated -Wno-conversion -fbar-iphone",
         settings.get("OTHER_CFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(
-        "-Wundeclared-selector -Wno-objc-designated-initializers -fbar-iphone "
-            + "-Wundeclared-selector -Wno-objc-designated-initializers -fbar-iphone",
+        "$(inherited) " + "-Wundeclared-selector -Wno-objc-designated-initializers -fbar-iphone",
         settings.get("OTHER_CPLUSPLUSFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(null, settings.get("OTHER_LDFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
 
@@ -3270,11 +3338,10 @@ public class ProjectGeneratorTest {
             projectFilesystem, dependentBuildTarget, dependentTarget, "Debug");
 
     assertEquals(
-        "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone "
-            + "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone",
+        "$(inherited) " + "-Wno-deprecated -Wno-conversion -ffoo-iphone -fbar-iphone",
         dependentSettings.get("OTHER_CFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(
-        "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo-iphone -fbar-iphone "
+        "$(inherited) "
             + "-Wundeclared-selector -Wno-objc-designated-initializers -ffoo-iphone -fbar-iphone",
         dependentSettings.get("OTHER_CPLUSPLUSFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
     assertEquals(null, dependentSettings.get("OTHER_LDFLAGS[sdk=iphonesimulator*][arch=x86_64]"));
@@ -5222,12 +5289,11 @@ public class ProjectGeneratorTest {
     ImmutableMap<String, String> profileSettings =
         ProjectGeneratorTestUtils.getBuildSettings(
             projectFilesystem, buildTarget, target, "Profile");
-    assertThat(debugSettings, Matchers.equalTo(profileSettings));
 
     ImmutableMap<String, String> releaseSettings =
         ProjectGeneratorTestUtils.getBuildSettings(
             projectFilesystem, buildTarget, target, "Release");
-    assertThat(debugSettings, Matchers.equalTo(releaseSettings));
+    assertThat(profileSettings, Matchers.equalTo(releaseSettings));
   }
 
   @Test
@@ -6160,7 +6226,8 @@ public class ProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
 
     projectGeneratorLib2.createXcodeProjects();
 
@@ -6206,7 +6273,8 @@ public class ProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
 
     projectGeneratorLib1.createXcodeProjects();
 
@@ -6331,7 +6399,8 @@ public class ProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
 
     projectGeneratorLib2.createXcodeProjects();
 
@@ -6385,7 +6454,8 @@ public class ProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
 
     projectGeneratorLib1.createXcodeProjects();
 
@@ -6447,21 +6517,27 @@ public class ProjectGeneratorTest {
 
   private ProjectGenerator createProjectGenerator(Collection<TargetNode<?>> allNodes) {
     return createProjectGenerator(
-        allNodes, allNodes, ProjectGeneratorOptions.builder().build(), ImmutableSet.of());
+        allNodes,
+        allNodes,
+        ProjectGeneratorOptions.builder().build(),
+        ImmutableSet.of(),
+        Optional.empty());
   }
 
   private ProjectGenerator createProjectGenerator(
       Collection<TargetNode<?>> allNodes,
       Collection<TargetNode<?>> initialTargetNodes,
       ProjectGeneratorOptions projectGeneratorOptions,
-      ImmutableSet<Flavor> appleCxxFlavors) {
+      ImmutableSet<Flavor> appleCxxFlavors,
+      Optional<ImmutableMap<BuildTarget, TargetNode<?>>> sharedLibrariesToBundles) {
     TargetGraph targetGraph = TargetGraphFactory.newInstance(ImmutableSet.copyOf(allNodes));
     return createProjectGenerator(
         allNodes,
         initialTargetNodes,
         projectGeneratorOptions,
         appleCxxFlavors,
-        getActionGraphBuilderNodeFunction(targetGraph));
+        getActionGraphBuilderNodeFunction(targetGraph),
+        sharedLibrariesToBundles);
   }
 
   private ProjectGenerator createProjectGenerator(
@@ -6472,7 +6548,8 @@ public class ProjectGeneratorTest {
         allNodes,
         projectGeneratorOptions,
         ImmutableSet.of(),
-        getActionGraphBuilderNodeFunction(targetGraph));
+        getActionGraphBuilderNodeFunction(targetGraph),
+        Optional.empty());
   }
 
   private ProjectGenerator createProjectGenerator(
@@ -6485,7 +6562,8 @@ public class ProjectGeneratorTest {
         initialTargetNodes,
         projectGeneratorOptions,
         ImmutableSet.of(),
-        getActionGraphBuilderNodeFunction(targetGraph));
+        getActionGraphBuilderNodeFunction(targetGraph),
+        Optional.empty());
   }
 
   private ProjectGenerator createProjectGenerator(
@@ -6493,7 +6571,12 @@ public class ProjectGeneratorTest {
       ProjectGeneratorOptions projectGeneratorOptions,
       Function<? super TargetNode<?>, ActionGraphBuilder> actionGraphBuilderForNode) {
     return createProjectGenerator(
-        allNodes, allNodes, projectGeneratorOptions, ImmutableSet.of(), actionGraphBuilderForNode);
+        allNodes,
+        allNodes,
+        projectGeneratorOptions,
+        ImmutableSet.of(),
+        actionGraphBuilderForNode,
+        Optional.empty());
   }
 
   private ProjectGenerator createProjectGenerator(
@@ -6501,7 +6584,8 @@ public class ProjectGeneratorTest {
       Collection<TargetNode<?>> initialTargetNodes,
       ProjectGeneratorOptions projectGeneratorOptions,
       ImmutableSet<Flavor> appleCxxFlavors,
-      Function<? super TargetNode<?>, ActionGraphBuilder> actionGraphBuilderForNode) {
+      Function<? super TargetNode<?>, ActionGraphBuilder> actionGraphBuilderForNode,
+      Optional<ImmutableMap<BuildTarget, TargetNode<?>>> sharedLibrariesToBundles) {
     ImmutableSet<BuildTarget> initialBuildTargets =
         initialTargetNodes
             .stream()
@@ -6537,7 +6621,8 @@ public class ProjectGeneratorTest {
         halideBuckConfig,
         cxxBuckConfig,
         appleConfig,
-        swiftBuckConfig);
+        swiftBuckConfig,
+        sharedLibrariesToBundles);
   }
 
   private Function<TargetNode<?>, ActionGraphBuilder> getActionGraphBuilderNodeFunction(
@@ -6596,12 +6681,19 @@ public class ProjectGeneratorTest {
   private void assertHasConfigurations(PBXTarget target, String... names) {
     Map<String, XCBuildConfiguration> buildConfigurationMap =
         target.getBuildConfigurationList().getBuildConfigurationsByName().asMap();
+    HashSet<String> configs = new HashSet<String>();
+    configs.add(CxxPlatformXcodeConfigGenerator.DEBUG_BUILD_CONFIGURATION_NAME);
+    configs.add(CxxPlatformXcodeConfigGenerator.PROFILE_BUILD_CONFIGURATION_NAME);
+    configs.add(CxxPlatformXcodeConfigGenerator.RELEASE_BUILD_CONFIGURATION_NAME);
+    for (String config : names) {
+      configs.add(config);
+    }
     assertEquals(
         "Configuration list has expected number of entries",
-        names.length,
+        configs.size(),
         buildConfigurationMap.size());
 
-    for (String name : names) {
+    for (String name : configs) {
       XCBuildConfiguration configuration = buildConfigurationMap.get(name);
 
       assertNotNull("Configuration entry exists", configuration);

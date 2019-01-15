@@ -45,6 +45,7 @@ import com.google.common.collect.Sets;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -101,10 +102,16 @@ public class BuckConfig {
             "public_announcements",
             "log_build_id_to_console_enabled",
             "build_details_template"));
-    ignoreFieldsForDaemonRestartBuilder.put("project", ImmutableSet.of("ide_prompt"));
+    ignoreFieldsForDaemonRestartBuilder.put(
+        "project", ImmutableSet.of("ide_prompt", "ide_force_kill"));
     ignoreFieldsForDaemonRestartBuilder.put(
         "ui",
-        ImmutableSet.of("superconsole", "thread_line_limit", "thread_line_output_max_columns"));
+        ImmutableSet.of(
+            "superconsole",
+            "thread_line_limit",
+            "thread_line_output_max_columns",
+            "warn_on_config_file_overrides",
+            "warn_on_config_file_overrides_ignored_files"));
     ignoreFieldsForDaemonRestartBuilder.put("color", ImmutableSet.of("ui"));
     IGNORE_FIELDS_FOR_DAEMON_RESTART = ignoreFieldsForDaemonRestartBuilder.build();
   }
@@ -226,9 +233,7 @@ public class BuckConfig {
   /** @return the parsed BuildTarget in the given section and field, if set. */
   public Optional<BuildTarget> getBuildTarget(String section, String field) {
     Optional<String> target = getValue(section, field);
-    return target.isPresent()
-        ? Optional.of(getBuildTargetForFullyQualifiedTarget(target.get()))
-        : Optional.empty();
+    return target.map(this::getBuildTargetForFullyQualifiedTarget);
   }
 
   /**
@@ -571,10 +576,20 @@ public class BuckConfig {
   }
 
   /**
-   * @return the number of threads Buck should use for testing. This will use the build
-   *     parallelization settings if not configured.
+   * @return the number of threads Buck should use for testing. This will use the test.threads
+   *     setting if it exists. Otherwise, this will use the build parallelization settings if not
+   *     configured.
    */
   public int getNumTestThreads() {
+    OptionalInt numTestThreads = config.getInteger("test", "threads");
+    if (numTestThreads.isPresent()) {
+      int num = numTestThreads.getAsInt();
+      if (num <= 0) {
+        throw new HumanReadableException(
+            "test.threads must be greater than zero (was " + num + ")");
+      }
+      return num;
+    }
     double ratio = config.getFloat(TEST_SECTION_HEADER, "thread_utilization_ratio").orElse(1.0F);
     if (ratio <= 0.0F) {
       throw new HumanReadableException(
@@ -693,13 +708,12 @@ public class BuckConfig {
 
   public Optional<Path> getPath(String sectionName, String name, boolean isCellRootRelative) {
     Optional<String> pathString = getValue(sectionName, name);
-    return pathString.isPresent()
-        ? Optional.of(
+    return pathString.map(
+        path ->
             convertPathWithError(
-                pathString.get(),
+                path,
                 isCellRootRelative,
-                String.format("Overridden %s:%s path not found", sectionName, name)))
-        : Optional.empty();
+                String.format("Overridden %s:%s path not found", sectionName, name)));
   }
 
   /**
@@ -781,10 +795,8 @@ public class BuckConfig {
 
   public Optional<ImmutableList<String>> getExternalTestRunner() {
     Optional<String> value = getValue("test", "external_runner");
-    if (!value.isPresent()) {
-      return Optional.empty();
-    }
-    return Optional.of(ImmutableList.copyOf(Splitter.on(' ').splitToList(value.get())));
+    return value.map(
+        configValue -> ImmutableList.copyOf(Splitter.on(' ').splitToList(configValue)));
   }
 
   /**
@@ -884,5 +896,17 @@ public class BuckConfig {
 
   public ProjectFilesystem getFilesystem() {
     return projectFilesystem;
+  }
+
+  public boolean getWarnOnConfigFileOverrides() {
+    return config.getBooleanValue("ui", "warn_on_config_file_overrides", true);
+  }
+
+  public ImmutableSet<Path> getWarnOnConfigFileOverridesIgnoredFiles() {
+    return config
+        .getListWithoutComments("ui", "warn_on_config_file_overrides_ignored_files", ',')
+        .stream()
+        .map(Paths::get)
+        .collect(ImmutableSet.toImmutableSet());
   }
 }

@@ -59,7 +59,7 @@ import com.facebook.buck.parser.Parser;
 import com.facebook.buck.parser.ParserTargetNodeFactory;
 import com.facebook.buck.parser.TestParserFactory;
 import com.facebook.buck.parser.exceptions.BuildFileParseException;
-import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
+import com.facebook.buck.rules.coercer.DefaultConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.PathTypeCoercer;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
@@ -75,6 +75,7 @@ import com.facebook.buck.util.cache.impl.DefaultFileHashCache;
 import com.facebook.buck.util.cache.impl.StackedFileHashCache;
 import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.config.ConfigBuilder;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -120,7 +121,7 @@ public class DistBuildStateTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("envKey", "envValue")
                     .build())
             .setFilesystem(filesystem)
@@ -173,7 +174,7 @@ public class DistBuildStateTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("envKey", "envValue")
                     .build())
             .setFilesystem(filesystem)
@@ -190,7 +191,7 @@ public class DistBuildStateTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("envKey", "envValue")
                     .build())
             .setFilesystem(filesystem)
@@ -311,7 +312,7 @@ public class DistBuildStateTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("envKey", "envValue")
                     .build())
             .setFilesystem(cell1Filesystem)
@@ -340,7 +341,7 @@ public class DistBuildStateTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("envKey", "envValue")
                     .build())
             .setFilesystem(cell1Filesystem)
@@ -422,9 +423,9 @@ public class DistBuildStateTest {
     ParserTargetNodeFactory<Map<String, Object>> parserTargetNodeFactory =
         DefaultParserTargetNodeFactory.createForDistributedBuild(
             knownRuleTypesProvider,
-            new ConstructorArgMarshaller(typeCoercerFactory),
-            new TargetNodeFactory(typeCoercerFactory),
-            TestRuleKeyConfigurationFactory.create());
+            new DefaultConstructorArgMarshaller(typeCoercerFactory),
+            new TargetNodeFactory(
+                typeCoercerFactory, PathTypeCoercer.PathExistenceVerificationMode.DO_NOT_VERIFY));
 
     return new DistBuildTargetGraphCodec(
         MoreExecutors.newDirectExecutorService(),
@@ -452,8 +453,7 @@ public class DistBuildStateTest {
         JavaLibraryBuilder.createBuilder(target, cellTwoFilesystem).build());
   }
 
-  public static ProjectFilesystem createJavaOnlyFilesystem(String rootPath)
-      throws InterruptedException, IOException {
+  public static ProjectFilesystem createJavaOnlyFilesystem(String rootPath) throws IOException {
     ProjectFilesystem filesystem = FakeProjectFilesystem.createJavaOnlyFilesystem(rootPath);
     filesystem.mkdirs(filesystem.getBuckPaths().getBuckOut());
     return filesystem;

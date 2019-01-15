@@ -22,7 +22,7 @@ import com.google.common.collect.ImmutableMap;
  * A computation environment that {@link GraphTransformer} can access. This class provides ability
  * of {@link GraphTransformer}s to access their dependencies.
  */
-final class DefaultTransformationEnvironment<ComputeKey, ComputeResult>
+class DefaultTransformationEnvironment<ComputeKey, ComputeResult>
     implements TransformationEnvironment<ComputeKey, ComputeResult> {
 
   private final ImmutableMap<ComputeKey, ComputeResult> deps;

@@ -22,7 +22,8 @@ import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.event.PerfEventId;
 import com.facebook.buck.event.SimplePerfEvent;
-import com.facebook.buck.io.filesystem.PathOrGlobMatcher;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.PathMatcher;
 import com.facebook.buck.io.watchman.ProjectWatch;
 import com.facebook.buck.io.watchman.WatchmanDiagnostic;
 import com.facebook.buck.io.watchman.WatchmanDiagnosticEvent;
@@ -35,6 +36,7 @@ import com.facebook.buck.parser.api.ProjectBuildFileParser;
 import com.facebook.buck.parser.events.ParseBuckFileEvent;
 import com.facebook.buck.parser.events.ParseBuckProfilerReportEvent;
 import com.facebook.buck.parser.exceptions.BuildFileParseException;
+import com.facebook.buck.parser.implicit.PackageImplicitIncludesFinder;
 import com.facebook.buck.parser.options.ProjectBuildFileParserOptions;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
 import com.facebook.buck.skylark.io.GlobSpecWithResult;
@@ -90,6 +92,7 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
   private static final Logger LOG = Logger.get(PythonDslProjectBuildFileParser.class);
 
   private final ImmutableMap<String, String> environment;
+  private final PackageImplicitIncludesFinder packageImplicitIncludeFinder;
 
   @Nullable private BuckPythonProgram buckPythonProgram;
   private Supplier<Path> rawConfigJson;
@@ -159,7 +162,7 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
                       options
                           .getIgnorePaths()
                           .stream()
-                          .map(PathOrGlobMatcher::getPathOrGlob)
+                          .map(PathMatcher::getPathOrGlob)
                           .collect(ImmutableList.toImmutableList()));
                 }
                 return ignorePathsJson1;
@@ -167,6 +170,9 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
                 throw new RuntimeException(e);
               }
             });
+
+    this.packageImplicitIncludeFinder =
+        PackageImplicitIncludesFinder.fromConfiguration(options.getPackageImplicitIncludes());
   }
 
   @VisibleForTesting
@@ -389,7 +395,8 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
     Objects.requireNonNull(buckPyProcessInput);
     long alreadyReadBytes = buckPyProcessInput.getCount();
 
-    ParseBuckFileEvent.Started parseBuckFileStarted = ParseBuckFileEvent.started(buildFile);
+    ParseBuckFileEvent.Started parseBuckFileStarted =
+        ParseBuckFileEvent.started(buildFile, this.getClass());
     buckEventBus.post(parseBuckFileStarted);
 
     ImmutableList<Map<String, Object>> values = ImmutableList.of();
@@ -409,9 +416,14 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
       BuildFilePythonResult resultObject =
           performJsonRequest(
               ImmutableMap.of(
-                  "buildFile", buildFile.toString(),
-                  "watchRoot", watchRoot,
-                  "projectPrefix", projectPrefix));
+                  "buildFile",
+                  buildFile.toString(),
+                  "watchRoot",
+                  watchRoot,
+                  "projectPrefix",
+                  projectPrefix,
+                  "packageImplicitLoad",
+                  packageImplicitIncludeFinder.findIncludeForBuildFile(getBasePath(buildFile))));
       Path buckPyPath = getPathToBuckPy(options.getDescriptions());
       handleDiagnostics(
           buildFile, buckPyPath.getParent(), resultObject.getDiagnostics(), buckEventBus);
@@ -442,11 +454,20 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
     }
   }
 
+  /**
+   * @return The path of the provided {@code buildFile}. For example, for {@code
+   *     /Users/foo/repo/src/bar/BUCK}, where {@code /Users/foo/repo} is the path to the repo, it
+   *     would return {@code src/bar}.
+   */
+  private Path getBasePath(Path buildFile) {
+    return MorePaths.getParentOrEmpty(MorePaths.relativize(options.getProjectRoot(), buildFile));
+  }
+
   @SuppressWarnings("unchecked")
   private BuildFileManifest toBuildFileManifest(ImmutableList<Map<String, Object>> values) {
     return BuildFileManifest.of(
         indexTargetsByName(values.subList(0, values.size() - 3).asList()),
-        ImmutableList.copyOf(
+        ImmutableSortedSet.copyOf(
             Objects.requireNonNull(
                 (List<String>) values.get(values.size() - 3).get(MetaRules.INCLUDES))),
         Objects.requireNonNull(
@@ -468,7 +489,7 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
     return builder.build();
   }
 
-  private BuildFilePythonResult performJsonRequest(ImmutableMap<String, String> request)
+  private BuildFilePythonResult performJsonRequest(ImmutableMap<String, Object> request)
       throws IOException {
     Objects.requireNonNull(request);
     Objects.requireNonNull(buckPyProcessJsonGenerator);
@@ -684,7 +705,7 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
   }
 
   private static void handleWatchmanDiagnostic(
-      Path buildFile, String level, String message, BuckEventBus buckEventBus) throws IOException {
+      Path buildFile, String level, String message, BuckEventBus buckEventBus) {
     WatchmanDiagnostic.Level watchmanDiagnosticLevel;
     switch (level) {
         // Watchman itself doesn't issue debug or info, but in case
@@ -724,15 +745,14 @@ public class PythonDslProjectBuildFileParser implements ProjectBuildFileParser {
   }
 
   @Override
-  public ImmutableList<String> getIncludedFiles(Path buildFile)
+  public ImmutableSortedSet<String> getIncludedFiles(Path buildFile)
       throws BuildFileParseException, InterruptedException {
     return getBuildFileManifest(buildFile).getIncludes();
   }
 
   @Override
   public boolean globResultsMatchCurrentState(
-      Path buildFile, ImmutableList<GlobSpecWithResult> existingGlobsWithResults)
-      throws IOException, InterruptedException {
+      Path buildFile, ImmutableList<GlobSpecWithResult> existingGlobsWithResults) {
     throw new UnsupportedOperationException("Not yet implemented!");
   }
 

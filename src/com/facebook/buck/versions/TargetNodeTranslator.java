@@ -18,11 +18,11 @@ package com.facebook.buck.versions;
 import com.facebook.buck.core.cell.CellPathResolver;
 import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.model.targetgraph.TargetNode;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPattern;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.sourcepath.DefaultBuildTargetSourcePath;
 import com.facebook.buck.core.sourcepath.SourcePath;
 import com.facebook.buck.core.sourcepath.SourceWithFlags;
-import com.facebook.buck.parser.BuildTargetPattern;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.rules.coercer.CoercedTypeCache;
 import com.facebook.buck.rules.coercer.ParamInfo;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
@@ -163,9 +163,7 @@ public abstract class TargetNodeTranslator {
       DefaultBuildTargetSourcePath val) {
     BuildTarget target = val.getTarget();
     Optional<BuildTarget> translatedTarget = translate(cellPathResolver, pattern, target);
-    return translatedTarget.isPresent()
-        ? Optional.of(DefaultBuildTargetSourcePath.of(translatedTarget.get()))
-        : Optional.empty();
+    return translatedTarget.map(DefaultBuildTargetSourcePath::of);
   }
 
   public Optional<SourceWithFlags> translateSourceWithFlags(
@@ -174,9 +172,7 @@ public abstract class TargetNodeTranslator {
       SourceWithFlags val) {
     Optional<SourcePath> translatedSourcePath =
         translate(cellPathResolver, pattern, val.getSourcePath());
-    return translatedSourcePath.isPresent()
-        ? Optional.of(SourceWithFlags.of(translatedSourcePath.get(), val.getFlags()))
-        : Optional.empty();
+    return translatedSourcePath.map(sourcePath -> SourceWithFlags.of(sourcePath, val.getFlags()));
   }
 
   @SuppressWarnings("unchecked")

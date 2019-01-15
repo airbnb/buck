@@ -45,6 +45,7 @@ import com.facebook.buck.file.WriteFile;
 import com.facebook.buck.io.file.MorePaths;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.args.Arg;
+import com.facebook.buck.rules.args.HasSourcePath;
 import com.facebook.buck.rules.args.SanitizedArg;
 import com.facebook.buck.rules.args.StringArg;
 import com.google.common.annotations.VisibleForTesting;
@@ -269,6 +270,7 @@ abstract class GoDescriptors {
       ActionGraphBuilder graphBuilder,
       GoBuckConfig goBuckConfig,
       Linker.LinkableDepType linkStyle,
+      Optional<GoLinkStep.LinkMode> linkMode,
       ImmutableSet<SourcePath> srcs,
       ImmutableSortedSet<SourcePath> resources,
       List<String> compilerFlags,
@@ -362,6 +364,33 @@ abstract class GoDescriptors {
                   absBinaryDir.relativize(sharedLibraries.getRoot()).toString())));
     }
 
+    ImmutableList<Arg> cxxLinkerArgs =
+        getCxxLinkerArgs(
+            graphBuilder,
+            platform.getCxxPlatform(),
+            cgoLinkables,
+            linkStyle,
+            StringArg.from(
+                Iterables.concat(
+                    platform.getExternalLinkerFlags(), extraFlags.build(), externalLinkerFlags)));
+
+    // collect build rules from args (required otherwise referenced sources
+    // won't build before linking)
+    for (Arg arg : cxxLinkerArgs) {
+      if (HasSourcePath.class.isInstance(arg)) {
+        SourcePath pth = ((HasSourcePath) arg).getPath();
+        extraDeps.addAll(ruleFinder.filterBuildRuleInputs(pth));
+      }
+    }
+
+    if (!linkMode.isPresent()) {
+      linkMode =
+          Optional.of(
+              (cxxLinkerArgs.size() > 0)
+                  ? GoLinkStep.LinkMode.EXTERNAL
+                  : GoLinkStep.LinkMode.INTERNAL);
+    }
+
     Linker cxxLinker = platform.getCxxPlatform().getLd().resolve(graphBuilder);
     return new GoBinary(
         buildTarget,
@@ -379,15 +408,9 @@ abstract class GoDescriptors {
         library,
         platform.getLinker(),
         cxxLinker,
+        linkMode.get(),
         ImmutableList.copyOf(linkerFlags),
-        getCxxLinkerArgs(
-            graphBuilder,
-            platform.getCxxPlatform(),
-            cgoLinkables,
-            linkStyle,
-            StringArg.from(
-                Iterables.concat(
-                    platform.getExternalLinkerFlags(), extraFlags.build(), externalLinkerFlags))),
+        cxxLinkerArgs,
         platform);
   }
 
@@ -433,6 +456,7 @@ abstract class GoDescriptors {
                   graphBuilder,
                   goBuckConfig,
                   Linker.LinkableDepType.STATIC_PIC,
+                  Optional.empty(),
                   ImmutableSet.of(writeFile.getSourcePathToOutput()),
                   ImmutableSortedSet.of(),
                   ImmutableList.of(),

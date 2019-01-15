@@ -56,7 +56,6 @@ import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Sets;
 import com.google.common.hash.HashCode;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
@@ -119,8 +118,11 @@ public class DefaultJavaLibrary
   private final JavaAbiInfo javaAbiInfo;
 
   @Nullable private CalculateSourceAbi sourceAbi;
+  private final boolean isDesugarEnabled;
+  private final boolean isInterfaceMethodsDesugarEnabled;
   private SourcePathRuleFinder ruleFinder;
   private final Optional<SourcePath> sourcePathForOutputJar;
+  private final Optional<SourcePath> sourcePathForGeneratedAnnotationPath;
 
   public static DefaultJavaLibraryRules.Builder rulesBuilder(
       BuildTarget buildTarget,
@@ -166,7 +168,9 @@ public class DefaultJavaLibrary
       boolean requiredForSourceOnlyAbi,
       UnusedDependenciesAction unusedDependenciesAction,
       Optional<UnusedDependenciesFinderFactory> unusedDependenciesFinderFactory,
-      @Nullable CalculateSourceAbi sourceAbi) {
+      @Nullable CalculateSourceAbi sourceAbi,
+      boolean isDesugarEnabled,
+      boolean isInterfaceMethodsDesugarEnabled) {
     super(
         buildTarget,
         projectFilesystem,
@@ -182,8 +186,14 @@ public class DefaultJavaLibrary
     this.sourcePathForOutputJar =
         Optional.ofNullable(
             jarBuildStepsFactory.getSourcePathToOutput(getBuildTarget(), getProjectFilesystem()));
+    this.sourcePathForGeneratedAnnotationPath =
+        Optional.ofNullable(
+            jarBuildStepsFactory.getSourcePathToGeneratedAnnotationPath(
+                getBuildTarget(), getProjectFilesystem()));
 
     this.sourceAbi = sourceAbi;
+    this.isDesugarEnabled = isDesugarEnabled;
+    this.isInterfaceMethodsDesugarEnabled = isInterfaceMethodsDesugarEnabled;
 
     // Exported deps are meant to be forwarded onto the CLASSPATH for dependents,
     // and so only make sense for java library types.
@@ -247,6 +257,16 @@ public class DefaultJavaLibrary
   }
 
   @Override
+  public boolean isDesugarEnabled() {
+    return isDesugarEnabled;
+  }
+
+  @Override
+  public boolean isInterfaceMethodsDesugarEnabled() {
+    return isInterfaceMethodsDesugarEnabled;
+  }
+
+  @Override
   public boolean getRequiredForSourceOnlyAbi() {
     return requiredForSourceOnlyAbi;
   }
@@ -268,6 +288,16 @@ public class DefaultJavaLibrary
   @Override
   public ImmutableSortedSet<SourcePath> getResources() {
     return getBuildable().getResources();
+  }
+
+  @Override
+  public Optional<String> getResourcesRoot() {
+    return getBuildable().getResourcesRoot();
+  }
+
+  @Override
+  public boolean hasAnnotationProcessing() {
+    return getBuildable().hasAnnotationProcessing();
   }
 
   @Override
@@ -316,8 +346,8 @@ public class DefaultJavaLibrary
   }
 
   @Override
-  public Optional<Path> getGeneratedSourcePath() {
-    return CompilerOutputPaths.getAnnotationPath(getProjectFilesystem(), getBuildTarget());
+  public Optional<SourcePath> getGeneratedAnnotationSourcePath() {
+    return sourcePathForGeneratedAnnotationPath;
   }
 
   @Override

@@ -36,6 +36,7 @@ import com.facebook.buck.core.toolchain.tool.Tool;
 import com.facebook.buck.core.toolchain.tool.impl.VersionedTool;
 import com.facebook.buck.core.toolchain.toolprovider.impl.ConstantToolProvider;
 import com.facebook.buck.core.util.log.Logger;
+import com.facebook.buck.cxx.toolchain.ArchiveContents;
 import com.facebook.buck.cxx.toolchain.ArchiverProvider;
 import com.facebook.buck.cxx.toolchain.BsdArchiver;
 import com.facebook.buck.cxx.toolchain.CompilerProvider;
@@ -290,12 +291,14 @@ public class AppleCxxPlatforms {
             .getStubBinaryPath()
             .map(input -> sdkPaths.getSdkPath().resolve(input));
 
-    CxxBuckConfig config = new CxxBuckConfig(buckConfig);
-
     UserFlavor targetFlavor =
         UserFlavor.of(
             Flavor.replaceInvalidCharacters(targetSdk.getName() + "-" + targetArchitecture),
             String.format("SDK: %s, architecture: %s", targetSdk.getName(), targetArchitecture));
+    CxxBuckConfig config =
+        appleConfig.useFlavoredCxxSections()
+            ? new CxxBuckConfig(buckConfig, targetFlavor)
+            : new CxxBuckConfig(buckConfig);
 
     ImmutableBiMap.Builder<Path, String> sanitizerPaths = ImmutableBiMap.builder();
     sanitizerPaths.put(sdkPaths.getSdkPath(), "APPLE_SDKROOT");
@@ -422,9 +425,12 @@ public class AppleCxxPlatforms {
             ImmutableList.<String>builder().addAll(cflags).addAll(ldflagsBuilder.build()).build(),
             strip,
             ArchiverProvider.from(new BsdArchiver(ar)),
+            ArchiveContents.NORMAL,
             Optional.of(new ConstantToolProvider(ranlib)),
             new PosixNmSymbolNameTool(nm),
             cflagsBuilder.build(),
+            ImmutableList.of(),
+            cflags,
             ImmutableList.of(),
             cflags,
             ImmutableList.of(),
@@ -520,13 +526,10 @@ public class AppleCxxPlatforms {
             swiftStdlibToolParamsBuilder.build(),
             filesystem);
 
-    if (swiftc.isPresent()) {
-      return Optional.of(
-          SwiftPlatformFactory.build(
-              platformName, sdkPaths.getToolchainPaths(), swiftc.get(), swiftStdLibTool));
-    } else {
-      return Optional.empty();
-    }
+    return swiftc.map(
+        tool ->
+            SwiftPlatformFactory.build(
+                platformName, sdkPaths.getToolchainPaths(), tool, swiftStdLibTool));
   }
 
   private static Optional<Tool> getOptionalTool(

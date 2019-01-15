@@ -56,25 +56,28 @@ public class BuckTargetPattern {
    *
    * <p>Note that no guarantee is given whether or not the target is *semantically* valid.
    */
-  public static Optional<BuckTargetPattern> parse(String s) {
-    Matcher matcher = PATTERN.matcher(s);
-    if (matcher.matches()) {
-      @Nullable String cell = matcher.group("cell");
-      @Nullable String path = matcher.group("path");
-      @Nullable String suffix = matcher.group("suffix");
-      if (path != null && suffix == null) {
-        // Check for recursive pattern
-        if ("...".equals(path)) {
-          path = "";
-          suffix = "/...";
-        } else if (path.endsWith("/...")) {
-          path = path.substring(0, path.length() - 4);
-          suffix = "/...";
-        }
-      }
-      return Optional.of(new BuckTargetPattern(cell, path, suffix));
-    }
-    return Optional.empty();
+  public static Optional<BuckTargetPattern> parse(String raw) {
+    return Optional.of(raw)
+        .filter(s -> !s.isEmpty())
+        .map(PATTERN::matcher)
+        .filter(Matcher::matches)
+        .map(
+            matcher -> {
+              @Nullable String cell = matcher.group("cell");
+              @Nullable String path = matcher.group("path");
+              @Nullable String suffix = matcher.group("suffix");
+              if (path != null && suffix == null) {
+                // Check for recursive pattern
+                if ("...".equals(path)) {
+                  path = "";
+                  suffix = "/...";
+                } else if (path.endsWith("/...")) {
+                  path = path.substring(0, path.length() - 4);
+                  suffix = "/...";
+                }
+              }
+              return new BuckTargetPattern(cell, path, suffix);
+            });
   }
 
   BuckTargetPattern(@Nullable String cellName, @Nullable String cellPath, @Nullable String suffix) {
@@ -101,6 +104,14 @@ public class BuckTargetPattern {
     } else {
       ruleName = null;
     }
+  }
+
+  /**
+   * Returns a base BuckTargetPattern for a cell with the given name, suitable for use in referring
+   * to all the targets in that cell or for resolving cell-relative targets.
+   */
+  public static BuckTargetPattern forCellName(@Nullable String cellName) {
+    return new BuckTargetPattern(cellName, "", "/...");
   }
 
   /** Returns the name of the cell, or {@link Optional#empty()} if none was specified. */
@@ -157,7 +168,7 @@ public class BuckTargetPattern {
   }
 
   /**
-   * Resolve the given buck target against this buck target.
+   * Resolve the given buck target pattern against this buck target pattern.
    *
    * <p>Returns {@link Optional#empty()} if the "other" is not parsable as a relative target using
    * {@link #parse(String)}.
@@ -169,10 +180,25 @@ public class BuckTargetPattern {
   }
 
   /**
-   * Resolve the given buck target against this target.
+   * Resolve the given buck target against this buck target pattern.
    *
-   * <p>If this target is fully-qualified, the resulting target is also guaranteed to be fully
-   * qualified.
+   * <p>If this target pattern is fully-qualified, the resulting target is also guaranteed to be
+   * fully qualified.
+   *
+   * <p>This is semantically similar to {@link java.nio.file.Path#resolve(Path)}.
+   */
+  public BuckTarget resolve(BuckTarget other) {
+    return new BuckTarget(
+        other.getCellName().orElse(cellName),
+        other.getCellPath().orElse(cellPath),
+        other.getRuleName());
+  }
+
+  /**
+   * Resolve the given buck target pattern against this target pattern.
+   *
+   * <p>If this target pattern is fully-qualified, the resulting target pattern is also guaranteed
+   * to be fully qualified.
    *
    * <p>This is semantically similar to {@link java.nio.file.Path#resolve(Path)}.
    */
@@ -266,12 +292,39 @@ public class BuckTargetPattern {
     return ":".equals(suffix);
   }
 
+  /** Returns a pattern like this pattern, but matching all targets in the given package. */
+  public BuckTargetPattern asPackageMatchingPattern() {
+    return new BuckTargetPattern(cellName, cellPath, ":");
+  }
+
   /**
    * Returns true if this pattern is a wildcard that matches all targets in both a package and its
    * recursive subpackages (i.e., a pattern ending in {@code "/..."}).
    */
   public boolean isRecursivePackageMatching() {
     return "/...".equals(suffix);
+  }
+
+  /**
+   * Returns a pattern like this pattern, but matching all targets in the given package and its
+   * recursive subpackages.
+   */
+  public BuckTargetPattern asRecursivePackageMatchingPattern() {
+    return new BuckTargetPattern(cellName, cellPath, "/...");
+  }
+
+  /**
+   * Returns a syntatically valid (but semantically different) variation of this target pattern,
+   * with hierarchical path elements in the rule name moved to the path. Example, {@code
+   * foo//bar:baz/qux => foo//bar/baz:qux}.
+   *
+   * @see {@link BuckTarget#flatten()} for more details.
+   */
+  public Optional<BuckTargetPattern> flatten() {
+    if (suffix == null || !suffix.contains("/") || isRecursivePackageMatching()) {
+      return Optional.of(this);
+    }
+    return asBuckTarget().flatMap(BuckTarget::flatten).map(BuckTarget::asPattern);
   }
 
   @Override

@@ -18,9 +18,9 @@ package com.facebook.buck.rules.coercer;
 
 import com.facebook.buck.core.cell.CellPathResolver;
 import com.facebook.buck.core.model.BuildTarget;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPattern;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.util.immutables.BuckStyleTuple;
-import com.facebook.buck.parser.BuildTargetPattern;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.versions.TargetNodeTranslator;
 import com.facebook.buck.versions.TargetTranslatable;
 import java.util.Optional;
@@ -49,11 +49,8 @@ abstract class AbstractNeededCoverageSpec implements TargetTranslatable<NeededCo
       TargetNodeTranslator translator) {
     Optional<BuildTarget> newBuildTarget =
         translator.translate(cellPathResolver, pattern, getBuildTarget());
-    if (!newBuildTarget.isPresent()) {
-      return Optional.empty();
-    }
-    return Optional.of(
-        NeededCoverageSpec.of(
-            getNeededCoverageRatioPercentage(), newBuildTarget.get(), getPathName()));
+    return newBuildTarget.map(
+        buildTarget ->
+            NeededCoverageSpec.of(getNeededCoverageRatioPercentage(), buildTarget, getPathName()));
   }
 }

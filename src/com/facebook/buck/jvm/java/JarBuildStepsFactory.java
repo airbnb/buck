@@ -180,9 +180,21 @@ public class JarBuildStepsFactory
     return resources;
   }
 
+  public Optional<String> getResourcesRoot() {
+    return resourcesParameters.getResourcesRoot();
+  }
+
   @Nullable
   public SourcePath getSourcePathToOutput(BuildTarget buildTarget, ProjectFilesystem filesystem) {
     return getOutputJarPath(buildTarget, filesystem)
+        .map(path -> ExplicitBuildTargetSourcePath.of(buildTarget, path))
+        .orElse(null);
+  }
+
+  @Nullable
+  public SourcePath getSourcePathToGeneratedAnnotationPath(
+      BuildTarget buildTarget, ProjectFilesystem filesystem) {
+    return getGeneratedAnnotationPath(buildTarget, filesystem)
         .map(path -> ExplicitBuildTargetSourcePath.of(buildTarget, path))
         .orElse(null);
   }
@@ -430,6 +442,15 @@ public class JarBuildStepsFactory
     }
   }
 
+  private Optional<Path> getGeneratedAnnotationPath(
+      BuildTarget buildTarget, ProjectFilesystem filesystem) {
+    if (!hasAnnotationProcessing()) {
+      return Optional.empty();
+    }
+
+    return CompilerOutputPaths.getAnnotationPath(filesystem, buildTarget);
+  }
+
   private Path getDepFileRelativePath(ProjectFilesystem filesystem, BuildTarget buildTarget) {
     return CompilerOutputPaths.getOutputJarDirPath(buildTarget, filesystem)
         .resolve("used-classes.json");
@@ -460,5 +481,9 @@ public class JarBuildStepsFactory
         compilerParameters,
         getAbiJarParameters(firstRule, context, filesystem, compilerParameters).orElse(null),
         getLibraryJarParameters(context, filesystem, compilerParameters).orElse(null));
+  }
+
+  public boolean hasAnnotationProcessing() {
+    return configuredCompiler.hasAnnotationProcessing();
   }
 }

@@ -542,7 +542,8 @@ public class AppleDescriptions {
       HasAppleDebugSymbolDeps unstrippedBinaryRule,
       AppleDebugFormat debugFormat,
       CxxPlatformsProvider cxxPlatformsProvider,
-      FlavorDomain<AppleCxxPlatform> appleCxxPlatforms) {
+      FlavorDomain<AppleCxxPlatform> appleCxxPlatforms,
+      boolean shouldCacheStrips) {
     // Target used as the base target of AppleDebuggableBinary.
 
     BuildTarget baseTarget = unstrippedBinaryRule.getBuildTarget();
@@ -558,7 +559,8 @@ public class AppleDescriptions {
                 graphBuilder,
                 unstrippedBinaryRule,
                 cxxPlatformsProvider,
-                appleCxxPlatforms);
+                appleCxxPlatforms,
+                shouldCacheStrips);
         return AppleDebuggableBinary.createWithDsym(
             projectFilesystem, baseTarget, strippedBinaryRule, dsym);
       case NONE:
@@ -574,7 +576,8 @@ public class AppleDescriptions {
       ActionGraphBuilder graphBuilder,
       HasAppleDebugSymbolDeps unstrippedBinaryRule,
       CxxPlatformsProvider cxxPlatformsProvider,
-      FlavorDomain<AppleCxxPlatform> appleCxxPlatforms) {
+      FlavorDomain<AppleCxxPlatform> appleCxxPlatforms,
+      boolean isCacheable) {
     return (AppleDsym)
         graphBuilder.computeIfAbsent(
             buildTarget
@@ -602,7 +605,8 @@ public class AppleDescriptions {
                       .getAppleDebugSymbolDeps()
                       .map(BuildRule::getSourcePathToOutput)
                       .collect(ImmutableSortedSet.toImmutableSortedSet(Ordering.natural())),
-                  AppleDsym.getDsymOutputPath(dsymBuildTarget, projectFilesystem));
+                  AppleDsym.getDsymOutputPath(dsymBuildTarget, projectFilesystem),
+                  isCacheable);
             });
   }
 
@@ -634,8 +638,10 @@ public class AppleDescriptions {
       ImmutableList<String> codesignFlags,
       Optional<String> codesignAdhocIdentity,
       Optional<Boolean> ibtoolModuleFlag,
+      Optional<ImmutableList<String>> ibtoolFlags,
       Duration codesignTimeout,
-      boolean copySwiftStdlibToFrameworks) {
+      boolean copySwiftStdlibToFrameworks,
+      boolean cacheStrips) {
     AppleCxxPlatform appleCxxPlatform =
         ApplePlatforms.getAppleCxxPlatformForBuildTarget(
             cxxPlatformsProvider,
@@ -790,13 +796,16 @@ public class AppleDescriptions {
               (HasAppleDebugSymbolDeps) unstrippedBinaryRule,
               debugFormat,
               cxxPlatformsProvider,
-              appleCxxPlatforms);
+              appleCxxPlatforms,
+              cacheStrips);
       targetDebuggableBinaryRule = debuggableBinary;
       appleDsym = debuggableBinary.getAppleDsym();
     } else {
       targetDebuggableBinaryRule = unstrippedBinaryRule;
       appleDsym = Optional.empty();
     }
+
+    ImmutableList<String> ibtoolFlagsUnwrapped = ibtoolFlags.orElse(ImmutableList.of());
 
     ImmutableSet<BuildRule> extraBinaries =
         collectFirstLevelExtraBinariesFromDeps(
@@ -862,6 +871,7 @@ public class AppleDescriptions {
         codesignFlags,
         codesignAdhocIdentity,
         ibtoolModuleFlag,
+        ibtoolFlagsUnwrapped,
         codesignTimeout,
         copySwiftStdlibToFrameworks);
   }

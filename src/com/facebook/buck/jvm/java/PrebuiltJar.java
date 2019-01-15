@@ -156,6 +156,16 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
   }
 
   @Override
+  public boolean isDesugarEnabled() {
+    return true;
+  }
+
+  @Override
+  public boolean isInterfaceMethodsDesugarEnabled() {
+    return false;
+  }
+
+  @Override
   public ImmutableSortedMap<String, HashCode> getClassNamesToHashes() {
     return buildOutputInitializer.getBuildOutput().getClassNamesToHashes();
   }
@@ -222,6 +232,11 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
   }
 
   @Override
+  public Optional<String> getResourcesRoot() {
+    return Optional.empty();
+  }
+
+  @Override
   public SortedSet<BuildRule> getExportedDeps() {
     return getDeclaredDeps();
   }
@@ -232,8 +247,13 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
   }
 
   @Override
-  public Optional<Path> getGeneratedSourcePath() {
+  public Optional<SourcePath> getGeneratedAnnotationSourcePath() {
     return Optional.empty();
+  }
+
+  @Override
+  public boolean hasAnnotationProcessing() {
+    return false;
   }
 
   @Override

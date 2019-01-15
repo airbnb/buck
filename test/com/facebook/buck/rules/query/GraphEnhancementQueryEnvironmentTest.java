@@ -27,12 +27,12 @@ import com.facebook.buck.core.model.BuildTargetFactory;
 import com.facebook.buck.core.model.targetgraph.TargetGraph;
 import com.facebook.buck.core.model.targetgraph.TargetGraphFactory;
 import com.facebook.buck.core.model.targetgraph.TargetNode;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.rules.ActionGraphBuilder;
 import com.facebook.buck.core.rules.resolver.impl.TestActionGraphBuilder;
 import com.facebook.buck.jvm.java.FakeJavaLibrary;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
 import com.facebook.buck.jvm.java.JavaLibraryDescriptionArg;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.query.QueryBuildTarget;
 import com.facebook.buck.query.QueryTarget;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
@@ -56,7 +56,7 @@ public class GraphEnhancementQueryEnvironmentTest {
   private static final Path ROOT = Paths.get("/fake/cell/root");
 
   @Before
-  public void setUp() throws Exception {
+  public void setUp() {
     cellRoots = DefaultCellPathResolver.of(ROOT, ImmutableMap.of());
   }
 
@@ -190,6 +190,19 @@ public class GraphEnhancementQueryEnvironmentTest {
     ImmutableList.Builder<Object> subLibDeps = ImmutableList.builder();
     env.forEachFwdDep(ImmutableSet.of(getQueryTarget("//:sublib")), subLibDeps::add);
     assertThat(subLibDeps.build(), Matchers.contains(getQueryTarget("//:bottom")));
+  }
+
+  @Test
+  public void getRDeps() {
+    GraphEnhancementQueryEnvironment env = buildQueryEnvironmentWithGraph();
+    // lib -> sublib
+    assertThat(
+        env.getReverseDeps(ImmutableSet.of(getQueryTarget("//:sublib"))),
+        Matchers.contains(getQueryTarget("//:lib")));
+    // sublib -> bottom
+    assertThat(
+        env.getReverseDeps(ImmutableSet.of(getQueryTarget("//:bottom"))),
+        Matchers.contains(getQueryTarget("//:sublib")));
   }
 
   @Test

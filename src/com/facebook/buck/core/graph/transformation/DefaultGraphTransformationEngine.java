@@ -126,8 +126,8 @@ public final class DefaultGraphTransformationEngine<ComputeKey, ComputeResult>
   }
 
   @Override
-  public void shutdownNow() {
-    impl.shutdownNow();
+  public void close() {
+    impl.close();
   }
 
   @Override
@@ -194,8 +194,8 @@ public final class DefaultGraphTransformationEngine<ComputeKey, ComputeResult>
       this.executor = executor;
     }
 
-    public void shutdownNow() {
-      executor.shutdownNow();
+    public void close() {
+      executor.close();
     }
 
     private Future<ComputeResult> compute(ComputeKey key) {
@@ -227,7 +227,7 @@ public final class DefaultGraphTransformationEngine<ComputeKey, ComputeResult>
             LOG.verbose("Result cache miss. Computing transformation for requested key: %s", key);
             ImmutableMap.Builder<ComputeKey, Future<ComputeResult>> depResults =
                 ImmutableMap.builder();
-            return executor.createTask(
+            return executor.createThrowingTask(
                 () -> computeForKey(key, collectDeps(depResults.build())),
                 MoreSuppliers.memoize(
                     () -> computeDepsForKey(transformer.discoverDeps(key), depResults),

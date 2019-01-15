@@ -18,7 +18,7 @@ package com.facebook.buck.intellij.ideabuck.impl;
 
 import com.facebook.buck.intellij.ideabuck.api.BuckCellManager;
 import com.facebook.buck.intellij.ideabuck.config.BuckCell;
-import com.facebook.buck.intellij.ideabuck.config.BuckProjectSettingsProvider;
+import com.facebook.buck.intellij.ideabuck.config.BuckCellSettingsProvider;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Ordering;
 import com.intellij.openapi.components.PathMacroManager;
@@ -30,15 +30,16 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /** Default implementation of {@link BuckCellManager}. */
 public class BuckCellManagerImpl implements BuckCellManager {
 
   private static final Logger LOGGER = Logger.getInstance(BuckCellManagerImpl.class);
 
-  private Project mProject;
-  private BuckProjectSettingsProvider mBuckProjectSettingsProvider;
+  private BuckCellSettingsProvider mBuckCellSettingsProvider;
   private VirtualFileManager mVirtualFileManager;
   private PathMacroManager mPathMacroManager;
 
@@ -47,29 +48,33 @@ public class BuckCellManagerImpl implements BuckCellManager {
   }
 
   public BuckCellManagerImpl(
-      Project project,
-      BuckProjectSettingsProvider buckProjectSettingsProvider,
+      BuckCellSettingsProvider buckCellSettingsProvider,
       VirtualFileManager virtualFileManager,
       PathMacroManager pathMacroManager) {
-    mProject = project;
-    mBuckProjectSettingsProvider = buckProjectSettingsProvider;
+    mBuckCellSettingsProvider = buckCellSettingsProvider;
     mVirtualFileManager = virtualFileManager;
     mPathMacroManager = pathMacroManager;
   }
 
-  public Project getProject() {
-    return mProject;
+  @Override
+  public Optional<CellImpl> getDefaultCell() {
+    return mBuckCellSettingsProvider.getDefaultCell().map(CellImpl::new);
   }
 
   @Override
-  public Optional<CellImpl> getDefaultCell() {
-    return mBuckProjectSettingsProvider.getCells().findFirst().map(CellImpl::new);
+  public List<CellImpl> getCells() {
+    return mBuckCellSettingsProvider
+        .getCells()
+        .stream()
+        .map(CellImpl::new)
+        .collect(Collectors.toList());
   }
 
   @Override
   public Optional<CellImpl> findCellByName(String name) {
-    return mBuckProjectSettingsProvider
+    return mBuckCellSettingsProvider
         .getCells()
+        .stream()
         .filter(cell -> name.equals(cell.getName()))
         .findFirst()
         .map(CellImpl::new);
@@ -94,8 +99,9 @@ public class BuckCellManagerImpl implements BuckCellManager {
     if (canonicalPath == null) {
       return Optional.empty();
     }
-    return mBuckProjectSettingsProvider
+    return mBuckCellSettingsProvider
         .getCells()
+        .stream()
         .filter(
             cell -> {
               String root = mPathMacroManager.expandPath(cell.getRoot());

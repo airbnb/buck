@@ -26,6 +26,8 @@ import com.facebook.buck.core.model.platform.Platform;
 import com.facebook.buck.core.model.targetgraph.RawTargetNode;
 import com.facebook.buck.core.model.targetgraph.TargetNode;
 import com.facebook.buck.core.model.targetgraph.impl.TargetNodeFactory;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetParser;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.resources.ResourcesConfig;
 import com.facebook.buck.core.rules.config.ConfigurationRule;
 import com.facebook.buck.core.rules.config.ConfigurationRuleResolver;
@@ -40,8 +42,11 @@ import com.facebook.buck.core.select.impl.DefaultSelectorListResolver;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.io.watchman.Watchman;
 import com.facebook.buck.log.GlobalStateManager;
+import com.facebook.buck.manifestservice.ManifestService;
 import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
+import com.facebook.buck.util.ThrowingCloseableMemoizedSupplier;
+import com.facebook.buck.util.cache.FileHashCache;
 import com.facebook.buck.util.concurrent.CommandThreadFactory;
 import com.facebook.buck.util.concurrent.ConcurrencyLimit;
 import com.facebook.buck.util.concurrent.MostExecutors;
@@ -51,6 +56,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -73,7 +79,10 @@ class PerBuildStateFactoryWithConfigurableAttributes extends PerBuildStateFactor
       KnownRuleTypesProvider knownRuleTypesProvider,
       ParserPythonInterpreterProvider parserPythonInterpreterProvider,
       Watchman watchman,
-      BuckEventBus eventBus) {
+      BuckEventBus eventBus,
+      ThrowingCloseableMemoizedSupplier<ManifestService, IOException> manifestServiceSupplier,
+      FileHashCache fileHashCache) {
+    super(manifestServiceSupplier, fileHashCache);
     this.typeCoercerFactory = typeCoercerFactory;
     this.marshaller = marshaller;
     this.knownRuleTypesProvider = knownRuleTypesProvider;
@@ -83,7 +92,7 @@ class PerBuildStateFactoryWithConfigurableAttributes extends PerBuildStateFactor
   }
 
   @Override
-  protected PerBuildState create(
+  protected PerBuildStateWithConfigurableAttributes create(
       DaemonicParserState daemonicParserState,
       ListeningExecutorService executorService,
       Cell rootCell,
@@ -104,7 +113,9 @@ class PerBuildStateFactoryWithConfigurableAttributes extends PerBuildStateFactor
             parserPythonInterpreterProvider,
             enableProfiling,
             parseProcessedBytes,
-            knownRuleTypesProvider);
+            knownRuleTypesProvider,
+            manifestServiceSupplier,
+            fileHashCache);
     ProjectBuildFileParserPool projectBuildFileParserPool =
         new ProjectBuildFileParserPool(
             numParsingThreads, // Max parsers to create per cell.
@@ -137,19 +148,19 @@ class PerBuildStateFactoryWithConfigurableAttributes extends PerBuildStateFactor
             eventBus,
             buildFileRawNodeParsePipeline,
             buildTargetRawNodeParsePipeline,
-            new DefaultRawTargetNodeFactory(
-                knownRuleTypesProvider, marshaller, new BuiltTargetVerifier()));
+            new DefaultRawTargetNodeFactory(knownRuleTypesProvider, new BuiltTargetVerifier()));
 
     PackageBoundaryChecker packageBoundaryChecker =
         new ThrowingPackageBoundaryChecker(daemonicParserState.getBuildFileTrees());
 
     ParserTargetNodeFactory<RawTargetNode> nonResolvingRawTargetNodeToTargetNodeFactory =
         new NonResolvingRawTargetNodeToTargetNodeFactory(
-            knownRuleTypesProvider,
-            marshaller,
-            targetNodeFactory,
-            packageBoundaryChecker,
-            symlinkCheckers);
+            DefaultParserTargetNodeFactory.createForParser(
+                knownRuleTypesProvider,
+                marshaller,
+                daemonicParserState.getBuildFileTrees(),
+                symlinkCheckers,
+                targetNodeFactory));
 
     // This pipeline uses a direct executor instead of pipelineExecutorService to avoid
     // deadlocks happening when too many node are requested from targetNodeParsePipeline.
@@ -218,7 +229,13 @@ class PerBuildStateFactoryWithConfigurableAttributes extends PerBuildStateFactor
 
     cellManager.register(rootCell);
 
-    return new PerBuildState(cellManager, buildFileRawNodeParsePipeline, targetNodeParsePipeline);
+    return new PerBuildStateWithConfigurableAttributes(
+        cellManager,
+        buildFileRawNodeParsePipeline,
+        targetNodeParsePipeline,
+        constraintResolver,
+        selectorListResolver,
+        targetPlatform);
   }
 
   @SuppressWarnings("PMD.AvoidThreadGroup")

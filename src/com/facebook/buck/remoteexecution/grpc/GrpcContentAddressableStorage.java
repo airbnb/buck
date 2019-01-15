@@ -20,16 +20,17 @@ import build.bazel.remote.execution.v2.ContentAddressableStorageGrpc.ContentAddr
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.remoteexecution.ContentAddressedStorage;
 import com.facebook.buck.remoteexecution.Protocol;
+import com.facebook.buck.remoteexecution.Protocol.Digest;
 import com.facebook.buck.remoteexecution.Protocol.OutputDirectory;
 import com.facebook.buck.remoteexecution.Protocol.OutputFile;
+import com.facebook.buck.remoteexecution.UploadDataSupplier;
 import com.facebook.buck.remoteexecution.util.MultiThreadedBlobUploader;
 import com.facebook.buck.remoteexecution.util.OutputsMaterializer;
 import com.facebook.buck.util.concurrent.MostExecutors;
-import com.facebook.buck.util.function.ThrowingSupplier;
 import com.google.bytestream.ByteStreamGrpc.ByteStreamStub;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -57,16 +58,14 @@ public class GrpcContentAddressableStorage implements ContentAddressedStorage {
   }
 
   @Override
-  public void addMissing(
-      ImmutableMap<Protocol.Digest, ThrowingSupplier<InputStream, IOException>> data)
-      throws IOException {
-    uploader.addMissing(data);
+  public ListenableFuture<Void> addMissing(ImmutableMap<Digest, UploadDataSupplier> data) {
+    return uploader.addMissing(data);
   }
 
   @Override
-  public void materializeOutputs(
+  public ListenableFuture<Void> materializeOutputs(
       List<OutputDirectory> outputDirectories, List<OutputFile> outputFiles, Path root)
       throws IOException {
-    outputsMaterializer.materialize(outputDirectories, outputFiles, root);
+    return outputsMaterializer.materialize(outputDirectories, outputFiles, root);
   }
 }

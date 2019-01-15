@@ -23,6 +23,7 @@ import com.facebook.buck.core.build.distributed.synchronization.impl.NoOpRemoteB
 import com.facebook.buck.core.build.engine.impl.DefaultRuleDepsCache;
 import com.facebook.buck.core.model.BuildId;
 import com.facebook.buck.core.model.BuildTarget;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetParser;
 import com.facebook.buck.core.rulekey.RuleKey;
 import com.facebook.buck.core.rulekey.calculator.ParallelRuleKeyCalculator;
 import com.facebook.buck.core.rules.SourcePathRuleFinder;
@@ -36,7 +37,6 @@ import com.facebook.buck.distributed.thrift.BuildJob;
 import com.facebook.buck.distributed.thrift.BuildStatus;
 import com.facebook.buck.distributed.thrift.RemoteCommand;
 import com.facebook.buck.distributed.thrift.SchedulingEnvironmentType;
-import com.facebook.buck.parser.BuildTargetParser;
 import com.facebook.buck.rules.keys.DefaultRuleKeyFactory;
 import com.facebook.buck.rules.keys.RuleKeyFieldLoader;
 import com.facebook.buck.step.ExecutionContext;
@@ -87,7 +87,7 @@ public class DistBuildSlaveExecutor {
     }
   }
 
-  public ExitCode buildAndReturnExitCode() throws IOException, InterruptedException {
+  public ExitCode buildAndReturnExitCode() throws Exception {
     if (args.getRemoteCommand() == RemoteCommand.RULE_KEY_DIVERGENCE_CHECK) {
       return setPreparationCallbackAndRun(
           RuleKeyDivergenceRunnerFactory.createRunner(
@@ -241,8 +241,7 @@ public class DistBuildSlaveExecutor {
     }
   }
 
-  private ExitCode setPreparationCallbackAndRun(DistBuildModeRunner runner)
-      throws IOException, InterruptedException {
+  private ExitCode setPreparationCallbackAndRun(DistBuildModeRunner runner) throws Exception {
     runner
         .getAsyncPrepFuture()
         .addListener(
@@ -293,7 +292,7 @@ public class DistBuildSlaveExecutor {
                 // Only the client side build needs to synchronize, not the slave.
                 // (as the co-ordinator synchronizes artifacts between slaves).
                 new NoOpRemoteBuildRuleCompletionWaiter(),
-                args.getTraceInfoProvider()),
+                args.getMetadataProvider()),
         args.getExecutorService());
   }
 

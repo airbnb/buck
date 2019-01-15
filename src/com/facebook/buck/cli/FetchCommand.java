@@ -52,15 +52,13 @@ import com.facebook.buck.util.ExitCode;
 import com.facebook.buck.util.MoreExceptions;
 import com.facebook.buck.versions.VersionException;
 import com.google.common.collect.ImmutableSet;
-import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
 
 public class FetchCommand extends BuildCommand {
 
   @Override
-  public ExitCode runWithoutHelp(CommandRunnerParams params)
-      throws IOException, InterruptedException {
+  public ExitCode runWithoutHelp(CommandRunnerParams params) throws Exception {
 
     if (getArguments().isEmpty()) {
       throw new CommandLineException("must specify at least one build target");
@@ -73,7 +71,7 @@ public class FetchCommand extends BuildCommand {
     ExitCode exitCode;
 
     try (CommandThreadManager pool =
-        new CommandThreadManager("Fetch", getConcurrencyLimit(params.getBuckConfig())); ) {
+        new CommandThreadManager("Fetch", getConcurrencyLimit(params.getBuckConfig()))) {
       ActionGraphAndBuilder actionGraphAndBuilder;
       ImmutableSet<BuildTarget> buildTargets;
       try {
@@ -81,7 +79,7 @@ public class FetchCommand extends BuildCommand {
         TargetGraphAndBuildTargets result =
             params
                 .getParser()
-                .buildTargetGraphForTargetNodeSpecs(
+                .buildTargetGraphWithoutConfigurationTargets(
                     params.getCell(),
                     getEnableParserProfiling(),
                     pool.getListeningExecutorService(),
@@ -89,6 +87,7 @@ public class FetchCommand extends BuildCommand {
                         params.getCell().getCellPathResolver(),
                         params.getBuckConfig(),
                         getArguments()),
+                    getExcludeIncompatibleTargets(),
                     parserConfig.getDefaultFlavorsMode());
         if (params.getBuckConfig().getBuildVersions()) {
           result = toVersionedTargetGraph(params, result);
@@ -151,7 +150,9 @@ public class FetchCommand extends BuildCommand {
                       actionGraphAndBuilder.getActionGraphBuilder(),
                       params.getBuckConfig().getBuildInputRuleKeyFileSizeLimit(),
                       ruleKeyCacheScope.getCache()),
-                  new NoOpRemoteBuildRuleCompletionWaiter());
+                  new NoOpRemoteBuildRuleCompletionWaiter(),
+                  cachingBuildEngineBuckConfig.getManifestServiceIfEnabled(
+                      params.getManifestServiceSupplier()));
           Build build =
               new Build(
                   actionGraphAndBuilder.getActionGraphBuilder(),

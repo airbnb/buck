@@ -321,7 +321,7 @@ public class DistBuildCommandDelegate {
                 RemoteBuildRuleCompletionWaiter remoteBuildRuleCompletionWaiter,
                 CountDownLatch initializeBuildLatch,
                 AtomicReference<Build> buildReference)
-                throws IOException, InterruptedException {
+                throws Exception {
               return buildCommand.executeLocalBuild(
                   params,
                   graphsAndBuildTargets,
@@ -636,7 +636,7 @@ public class DistBuildCommandDelegate {
             buildCommand.getBuildEngineMode(),
             ruleKeyLogger,
             remoteBuildRuleCompletionWaiter,
-            params.getTraceInfoProvider());
+            params.getMetadataProvider());
     localRuleKeyCalculator.set(builder.getCachingBuildEngine().getRuleKeyCalculator());
     builder.shutdown();
   }

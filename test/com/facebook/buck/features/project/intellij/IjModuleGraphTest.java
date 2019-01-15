@@ -485,7 +485,7 @@ public class IjModuleGraphTest {
         FluentIterable.from(moduleGraph.getNodes()).filter(IjLibrary.class).first().get();
 
     assertEquals(ImmutableSet.of(rDotJavaClassPath), productModule.getExtraClassPathDependencies());
-    assertEquals(ImmutableSet.of(rDotJavaClassPath), rDotJavaLibrary.getClassPaths());
+    assertEquals(ImmutableSet.of(rDotJavaClassPath), rDotJavaLibrary.getBinaryJars());
     assertEquals(
         moduleGraph.getDependentLibrariesFor(productModule),
         ImmutableMap.of(rDotJavaLibrary, DependencyType.PROD));
@@ -697,12 +697,6 @@ public class IjModuleGraphTest {
 
               @Override
               public Optional<Path> getAnnotationOutputPath(
-                  TargetNode<? extends JvmLibraryArg> targetNode) {
-                return Optional.empty();
-              }
-
-              @Override
-              public Optional<Path> getAbiAnnotationOutputPath(
                   TargetNode<? extends JvmLibraryArg> targetNode) {
                 return Optional.empty();
               }

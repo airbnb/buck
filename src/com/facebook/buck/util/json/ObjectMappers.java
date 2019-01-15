@@ -17,9 +17,7 @@
 package com.facebook.buck.util.json;
 
 import com.facebook.buck.core.exceptions.HumanReadableException;
-import com.facebook.buck.parser.cache.json.module.BuildFileManifestModule;
-import com.facebook.buck.skylark.json.SkylarkModule;
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
@@ -29,6 +27,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import java.io.BufferedInputStream;
@@ -46,6 +46,11 @@ public class ObjectMappers {
   // https://github.com/FasterXML/jackson-docs/wiki/Presentation:-Jackson-Performance
   public static final ObjectReader READER;
   public static final ObjectWriter WRITER;
+  /** ObjectReader that deserializes objects that had type information preserved */
+  public static final ObjectReader READER_WITH_TYPE;
+
+  /** ObjectWrite that serializes objects along with their type information */
+  public static final ObjectWriter WRITER_WITH_TYPE;
 
   public static <T> T readValue(Path file, Class<T> clazz) throws IOException {
     try (JsonParser parser = createParser(file)) {
@@ -133,6 +138,9 @@ public class ObjectMappers {
     READER = mapper.reader();
     WRITER = mapper.writer();
     jsonFactory = mapper.getFactory();
+    ObjectMapper mapper_with_type = create_with_type();
+    READER_WITH_TYPE = mapper_with_type.reader();
+    WRITER_WITH_TYPE = mapper_with_type.writer();
   }
 
   private static ObjectMapper create() {
@@ -140,16 +148,25 @@ public class ObjectMappers {
     // Disable automatic flush() after mapper.write() call, because it is usually unnecessary,
     // and it makes BufferedOutputStreams to be useless
     mapper.disable(SerializationFeature.FLUSH_AFTER_WRITE_VALUE);
-    mapper.setSerializationInclusion(JsonInclude.Include.NON_ABSENT);
+    mapper.setSerializationInclusion(Include.NON_ABSENT);
     mapper.configure(JsonParser.Feature.AUTO_CLOSE_SOURCE, true);
     // Add support for serializing Guava collections.
     mapper.registerModule(new GuavaModule());
     mapper.registerModule(new Jdk8Module());
-    // Add support for serializing Skylark types.
-    mapper.registerModule(new SkylarkModule());
-    // Add support for serializing BuildFileManifest types.
-    mapper.registerModule(new BuildFileManifestModule());
+
+    // With some version of Jackson JDK8 module, it starts to serialize Path objects using
+    // getURI() function, this results for serialized paths to be absolute paths with 'file:///'
+    // prefix. That does not work well with custom filesystems that Buck uses. Following hack
+    // restores legacy behavior to serialize Paths using toString().
+    SimpleModule pathModule = new SimpleModule("PathToString");
+    pathModule.addSerializer(Path.class, new ToStringSerializer());
+    mapper.registerModule(pathModule);
+
     return mapper;
+  }
+
+  private static ObjectMapper create_with_type() {
+    return create().enableDefaultTyping();
   }
 
   private ObjectMappers() {}

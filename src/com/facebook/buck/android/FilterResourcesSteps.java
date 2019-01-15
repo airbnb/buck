@@ -129,10 +129,7 @@ public class FilterResourcesSteps {
     this.enableStringWhitelisting = enableStringWhitelisting;
     this.whitelistedStringDirs = whitelistedStringDirs;
     this.locales = locales;
-    this.localizedStringFileName =
-        localizedStringFileName.isPresent()
-            ? localizedStringFileName.get()
-            : DEFAULT_STRINGS_FILE_NAME;
+    this.localizedStringFileName = localizedStringFileName.orElse(DEFAULT_STRINGS_FILE_NAME);
     this.filteredDirectoryCopier = filteredDirectoryCopier;
     this.targetDensities = targetDensities;
     this.drawableFinder = drawableFinder;
@@ -141,8 +138,7 @@ public class FilterResourcesSteps {
 
   private class CopyStep implements Step {
     @Override
-    public StepExecutionResult execute(ExecutionContext context)
-        throws IOException, InterruptedException {
+    public StepExecutionResult execute(ExecutionContext context) throws IOException {
       LOG.info(
           "FilterResourcesSteps: canDownscale: %s. imageScalar non-null: %s.",
           canDownscale(context), imageScaler != null);

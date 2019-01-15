@@ -48,6 +48,7 @@ import com.facebook.buck.util.ProcessExecutor;
 import com.facebook.buck.util.ProcessExecutorParams;
 import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.config.Configs;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.facebook.buck.util.environment.Platform;
 import com.facebook.buck.util.json.ObjectMappers;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -99,7 +100,7 @@ public class LuaBinaryIntegrationTest {
     // Verify that a Lua interpreter is available on the system.
     ExecutableFinder finder = new ExecutableFinder();
     Optional<Path> luaOptional =
-        finder.getOptionalExecutable(Paths.get("lua"), ImmutableMap.copyOf(System.getenv()));
+        finder.getOptionalExecutable(Paths.get("lua"), EnvVariablesProvider.getSystemEnv());
     assumeTrue(luaOptional.isPresent());
     lua = luaOptional.get();
 
@@ -144,10 +145,7 @@ public class LuaBinaryIntegrationTest {
         ".buckconfig");
     LuaPlatform platform =
         getLuaBuckConfig()
-            .getPlatforms(
-                ImmutableList.of(
-                    CxxPlatformUtils.DEFAULT_PLATFORM.withFlavor(DefaultCxxPlatforms.FLAVOR)))
-            .get(0);
+            .getPlatform(CxxPlatformUtils.DEFAULT_PLATFORM.withFlavor(DefaultCxxPlatforms.FLAVOR));
     assertThat(platform.getStarterType(), Matchers.equalTo(Optional.of(starterType)));
     assertThat(platform.getNativeLinkStrategy(), Matchers.equalTo(nativeLinkStrategy));
   }

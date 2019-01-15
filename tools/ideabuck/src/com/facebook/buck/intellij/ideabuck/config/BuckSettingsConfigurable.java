@@ -54,7 +54,11 @@ public class BuckSettingsConfigurable implements SearchableConfigurable {
 
   @Override
   public JComponent createComponent() {
-    panel = new BuckSettingsUI(BuckProjectSettingsProvider.getInstance(project));
+    panel =
+        new BuckSettingsUI(
+            BuckCellSettingsProvider.getInstance(project),
+            BuckExecutableSettingsProvider.getInstance(project),
+            BuckProjectSettingsProvider.getInstance(project));
     return panel;
   }
 

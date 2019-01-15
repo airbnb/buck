@@ -1,3 +1,17 @@
+# Copyright 2018-present Facebook, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
 """Module containing java macros."""
 
 load("@bazel_skylib//lib:collections.bzl", "collections")
@@ -65,11 +79,6 @@ def java_test(
         kwargs = _shallow_dict_copy_without_key(kwargs, "env")
     else:
         env = {}
-
-    if "//src/com/facebook/buck/step/external:external" in deps:
-        env["EXTERNAL_STEP_RUNNER_JAR_FOR_BUCK_TEST"] = (
-            "$(location //src/com/facebook/buck/step/external:executor)"
-        )
 
     native.java_test(
         name = name,

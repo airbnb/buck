@@ -263,12 +263,8 @@ public class AppleConfig implements ConfigView<BuckConfig> {
 
   private Optional<Path> getOptionalPath(String sectionName, String propertyName) {
     Optional<String> pathString = delegate.getValue(sectionName, propertyName);
-    if (pathString.isPresent()) {
-      return Optional.of(
-          delegate.resolvePathThatMayBeOutsideTheProjectFilesystem(Paths.get(pathString.get())));
-    } else {
-      return Optional.empty();
-    }
+    return pathString.map(
+        path -> delegate.resolvePathThatMayBeOutsideTheProjectFilesystem(Paths.get(path)));
   }
 
   public boolean shouldUseHeaderMapsInXcodeProject() {
@@ -415,6 +411,14 @@ public class AppleConfig implements ConfigView<BuckConfig> {
     return delegate
         .getValue(APPLE_SECTION, toolName + "_version_override")
         .orElse(defaultToolVersion);
+  }
+
+  /**
+   * @return whether to extend C/C++ platforms using config settings in <code>cxx#<flavor></code>
+   *     sections instead of the unflavored <code>cxx</code> section.
+   */
+  public boolean useFlavoredCxxSections() {
+    return delegate.getBoolean(APPLE_SECTION, "use_flavored_cxx_sections").orElse(false);
   }
 
   @Value.Immutable

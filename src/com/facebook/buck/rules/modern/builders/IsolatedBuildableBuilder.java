@@ -26,6 +26,8 @@ import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.module.BuckModuleManager;
 import com.facebook.buck.core.module.impl.BuckModuleJarHashProvider;
 import com.facebook.buck.core.module.impl.DefaultBuckModuleManager;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetParser;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.plugin.impl.BuckPluginManagerFactory;
 import com.facebook.buck.core.rules.AbstractBuildRuleResolver;
 import com.facebook.buck.core.rules.BuildRule;
@@ -48,8 +50,6 @@ import com.facebook.buck.io.filesystem.ProjectFilesystemFactory;
 import com.facebook.buck.io.filesystem.impl.DefaultProjectFilesystemFactory;
 import com.facebook.buck.jvm.core.JavaPackageFinder;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
-import com.facebook.buck.parser.BuildTargetParser;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.rules.modern.Deserializer;
 import com.facebook.buck.rules.modern.Deserializer.DataProvider;
 import com.facebook.buck.rules.modern.ModernBuildRule;
@@ -65,6 +65,7 @@ import com.facebook.buck.util.Scope;
 import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.config.Configs;
 import com.facebook.buck.util.environment.Architecture;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.facebook.buck.util.environment.Platform;
 import com.facebook.buck.util.exceptions.BuckUncheckedExecutionException;
 import com.google.common.base.Preconditions;
@@ -130,17 +131,13 @@ public abstract class IsolatedBuildableBuilder {
     ProjectFilesystemFactory projectFilesystemFactory = new DefaultProjectFilesystemFactory();
 
     // Root filesystemCell doesn't require embedded buck-out info.
-    ProjectFilesystem filesystem;
-    try {
-      filesystem = projectFilesystemFactory.createProjectFilesystem(canonicalProjectRoot, config);
-    } catch (InterruptedException e) {
-      throw new RuntimeException(e);
-    }
+    ProjectFilesystem filesystem =
+        projectFilesystemFactory.createProjectFilesystem(canonicalProjectRoot, config);
 
     Architecture architecture = Architecture.detect();
     Platform platform = Platform.detect();
 
-    ImmutableMap<String, String> clientEnvironment = ImmutableMap.copyOf(System.getenv());
+    ImmutableMap<String, String> clientEnvironment = EnvVariablesProvider.getSystemEnv();
 
     DefaultCellPathResolver cellPathResolver =
         DefaultCellPathResolver.of(filesystem.getRootPath(), config);
@@ -252,7 +249,9 @@ public abstract class IsolatedBuildableBuilder {
 
               fs.mkdirs(configuredPaths.getTmpDir());
               fs.mkdirs(configuredPaths.getBuckOut());
-              fs.createSymLink(configuredPaths.getProjectRootDir(), fs.getRootPath(), true);
+              fs.deleteFileAtPathIfExists(configuredPaths.getProjectRootDir());
+              fs.writeContentsToPath(
+                  fs.getRootPath().toString(), configuredPaths.getProjectRootDir());
 
               if (!configuredPaths.getConfiguredBuckOut().equals(configuredPaths.getBuckOut())
                   && buckConfig.getBuckOutCompatLink()

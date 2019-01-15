@@ -289,6 +289,7 @@ public class FakeAppleRuleDescriptions {
         xcodeDescriptions,
         SWIFT_LIBRARY_DESCRIPTION,
         DEFAULT_BUCK_CONFIG.getView(AppleConfig.class),
+        new CxxBuckConfig(DEFAULT_BUCK_CONFIG),
         new SwiftBuckConfig(DEFAULT_BUCK_CONFIG),
         cxxLibraryImplicitFlavors,
         cxxLibraryFlavored,
@@ -326,6 +327,7 @@ public class FakeAppleRuleDescriptions {
         xcodeDescriptions,
         SWIFT_LIBRARY_DESCRIPTION,
         DEFAULT_BUCK_CONFIG.getView(AppleConfig.class),
+        CxxPlatformUtils.DEFAULT_CONFIG,
         DEFAULT_BUCK_CONFIG.getView(SwiftBuckConfig.class),
         cxxBinaryImplicitFlavors,
         cxxBinaryFactory,
@@ -341,6 +343,7 @@ public class FakeAppleRuleDescriptions {
           BINARY_DESCRIPTION,
           LIBRARY_DESCRIPTION,
           DEFAULT_BUCK_CONFIG.getView(AppleConfig.class),
+          CxxPlatformUtils.DEFAULT_CONFIG,
           DEFAULT_BUCK_CONFIG.getView(SwiftBuckConfig.class));
 
   /** A fake apple_test description with an iOS platform for use in tests. */
@@ -349,6 +352,7 @@ public class FakeAppleRuleDescriptions {
           createTestToolchainProviderForApplePlatform(DEFAULT_APPLE_CXX_PLATFORM_FLAVOR_DOMAIN),
           XCodeDescriptionsFactory.create(BuckPluginManagerFactory.createPluginManager()),
           DEFAULT_BUCK_CONFIG.getView(AppleConfig.class),
+          CxxPlatformUtils.DEFAULT_CONFIG,
           DEFAULT_BUCK_CONFIG.getView(SwiftBuckConfig.class),
           LIBRARY_DESCRIPTION);
 

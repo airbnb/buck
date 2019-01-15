@@ -16,6 +16,7 @@
 
 package com.facebook.buck.testutil.integration;
 
+import static com.facebook.buck.util.string.MoreStrings.linesToText;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
@@ -34,6 +35,7 @@ import com.facebook.buck.core.cell.impl.DefaultCellPathResolver;
 import com.facebook.buck.core.cell.impl.LocalCellProviderFactory;
 import com.facebook.buck.core.config.BuckConfig;
 import com.facebook.buck.core.config.FakeBuckConfig;
+import com.facebook.buck.core.exceptions.handler.HumanReadableExceptionAugmentor;
 import com.facebook.buck.core.model.BuildId;
 import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.model.BuildTargetFactory;
@@ -58,13 +60,17 @@ import com.facebook.buck.testutil.TestConsole;
 import com.facebook.buck.util.CapturingPrintStream;
 import com.facebook.buck.util.CommandLineException;
 import com.facebook.buck.util.DefaultProcessExecutor;
+import com.facebook.buck.util.ErrorLogger;
+import com.facebook.buck.util.ErrorLogger.LogImpl;
 import com.facebook.buck.util.ExitCode;
+import com.facebook.buck.util.JavaVersion;
 import com.facebook.buck.util.ProcessExecutor;
 import com.facebook.buck.util.ProcessExecutorParams;
 import com.facebook.buck.util.Threads;
 import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.config.Configs;
 import com.facebook.buck.util.environment.CommandMode;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.facebook.buck.util.environment.Platform;
 import com.facebook.buck.util.string.MoreStrings;
 import com.facebook.buck.util.trace.ChromeTraceParser;
@@ -160,8 +166,7 @@ public class ProjectWorkspace extends AbstractWorkspace {
     this(templateDir, targetFolder, true);
   }
 
-  private ProjectFilesystemAndConfig getProjectFilesystemAndConfig()
-      throws InterruptedException, IOException {
+  private ProjectFilesystemAndConfig getProjectFilesystemAndConfig() throws IOException {
     if (projectFilesystemAndConfig == null) {
       Config config = Configs.createDefaultConfig(destPath);
       projectFilesystemAndConfig =
@@ -271,12 +276,23 @@ public class ProjectWorkspace extends AbstractWorkspace {
     ProcessResult buildResult = runBuckBuild(buildArgs.toArray(new String[0]));
     buildResult.assertSuccess();
 
-    // Grab the stdout lines, which have the build outputs.
+    // Build outputs are contained on stdout
+    return parseShowOutputStdoutAsStrings(buildResult.getStdout());
+  }
+
+  /**
+   * Parses the output of a --show-output build command into an easy to use map.
+   *
+   * @param stdout The stdout of the --show-output build command.
+   * @return The map of target => target output string. The value is relative to the Buck root of
+   *     the invoked command.
+   */
+  public ImmutableMap<String, String> parseShowOutputStdoutAsStrings(String stdout) {
     List<String> lines =
         Splitter.on(CharMatcher.anyOf(System.lineSeparator()))
             .trimResults()
             .omitEmptyStrings()
-            .splitToList(buildResult.getStdout());
+            .splitToList(stdout);
 
     Splitter lineSplitter = Splitter.on(' ').trimResults();
     ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
@@ -424,7 +440,7 @@ public class ProjectWorkspace extends AbstractWorkspace {
     assumeTrue(
         "watchman must exist to run buckd",
         new ExecutableFinder(Platform.detect())
-            .getOptionalExecutable(Paths.get("watchman"), ImmutableMap.copyOf(System.getenv()))
+            .getOptionalExecutable(Paths.get("watchman"), EnvVariablesProvider.getSystemEnv())
             .isPresent());
     return runBuckCommandWithEnvironmentOverridesAndContext(
         destPath, Optional.of(context), ImmutableMap.of(), stderr, args);
@@ -445,10 +461,7 @@ public class ProjectWorkspace extends AbstractWorkspace {
       Optional<NGContext> context,
       ImmutableMap<String, String> environmentOverrides,
       CapturingPrintStream stderr,
-      String... args)
-      throws IOException {
-    // TODO(cjhopman): This needs to be updated to actually get the correct error-handling from Main
-    // (which will require refactoring there).
+      String... args) {
     try {
       assertTrue("setUp() must be run before this method is invoked", isSetUp);
       CapturingPrintStream stdout = new CapturingPrintStream();
@@ -482,7 +495,7 @@ public class ProjectWorkspace extends AbstractWorkspace {
               "TMP");
       Map<String, String> envBuilder = new HashMap<>();
       for (String variable : inheritedEnvVars) {
-        String value = System.getenv(variable);
+        String value = EnvVariablesProvider.getSystemEnv().get(variable);
         if (value != null) {
           envBuilder.put(variable, value);
         }
@@ -495,6 +508,33 @@ public class ProjectWorkspace extends AbstractWorkspace {
               ? new Main(stdout, stderr, stdin, context)
               : new Main(stdout, stderr, stdin, knownRuleTypesFactoryFactory, context);
       ExitCode exitCode;
+
+      // TODO (buck_team): this code repeats the one in Main and thus wants generalization
+      HumanReadableExceptionAugmentor augmentor =
+          new HumanReadableExceptionAugmentor(ImmutableMap.of());
+      StringBuilder errorMessage = new StringBuilder();
+      ErrorLogger logger =
+          new ErrorLogger(
+              new LogImpl() {
+                @Override
+                public void logUserVisible(String message) {
+                  errorMessage.append("\n");
+                  errorMessage.append(message);
+                }
+
+                @Override
+                public void logUserVisibleInternalError(String message) {
+                  errorMessage.append("\n");
+                  errorMessage.append(linesToText("Buck encountered an internal error", message));
+                }
+
+                @Override
+                public void logVerbose(Throwable e) {
+                  // yes, do nothing
+                }
+              },
+              augmentor);
+
       try {
         exitCode =
             main.runMainWithExitCode(
@@ -515,40 +555,42 @@ public class ProjectWorkspace extends AbstractWorkspace {
       } catch (BuildFileParseException e) {
         stderr.println(e.getHumanReadableErrorMessage());
         exitCode = ExitCode.PARSE_ERROR;
-      } catch (Exception e) {
-        e.printStackTrace(stderr);
-        exitCode = ExceptionHandlerRegistryFactory.create().handleException(e);
+      } catch (Throwable t) {
+        logger.logException(t);
+        exitCode = ExceptionHandlerRegistryFactory.create().handleException(t);
       }
 
       return new ProcessResult(
           exitCode,
           stdout.getContentsAsString(Charsets.UTF_8),
-          stderr.getContentsAsString(Charsets.UTF_8));
+          stderr.getContentsAsString(Charsets.UTF_8) + errorMessage.toString());
     } finally {
-      // javac has a global cache of zip/jar file content listings. It determines the validity of
-      // a given cache entry based on the modification time of the zip file in question. In normal
-      // usage, this is fine. However, in tests, we often will do a build, change something, and
-      // then rapidly do another build. If this happens quickly, javac can be operating from
-      // incorrect information when reading a jar file, resulting in "bad class file" or
-      // "corrupted zip file" errors. We work around this for testing purposes by reaching inside
-      // the compiler and clearing the cache.
-      try {
-        Class<?> cacheClass =
-            Class.forName(
-                "com.sun.tools.javac.file.ZipFileIndexCache",
-                false,
-                ToolProvider.getSystemToolClassLoader());
+      if (JavaVersion.getMajorVersion() < 9) {
+        // javac has a global cache of zip/jar file content listings. It determines the validity of
+        // a given cache entry based on the modification time of the zip file in question. In normal
+        // usage, this is fine. However, in tests, we often will do a build, change something, and
+        // then rapidly do another build. If this happens quickly, javac can be operating from
+        // incorrect information when reading a jar file, resulting in "bad class file" or
+        // "corrupted zip file" errors. We work around this for testing purposes by reaching inside
+        // the compiler and clearing the cache.
+        try {
+          Class<?> cacheClass =
+              Class.forName(
+                  "com.sun.tools.javac.file.ZipFileIndexCache",
+                  false,
+                  ToolProvider.getSystemToolClassLoader());
 
-        Method getSharedInstanceMethod = cacheClass.getMethod("getSharedInstance");
-        Method clearCacheMethod = cacheClass.getMethod("clearCache");
+          Method getSharedInstanceMethod = cacheClass.getMethod("getSharedInstance");
+          Method clearCacheMethod = cacheClass.getMethod("clearCache");
 
-        Object cache = getSharedInstanceMethod.invoke(cacheClass);
-        clearCacheMethod.invoke(cache);
-      } catch (ClassNotFoundException
-          | IllegalAccessException
-          | InvocationTargetException
-          | NoSuchMethodException e) {
-        throw new RuntimeException(e);
+          Object cache = getSharedInstanceMethod.invoke(cacheClass);
+          clearCacheMethod.invoke(cache);
+        } catch (ClassNotFoundException
+            | IllegalAccessException
+            | InvocationTargetException
+            | NoSuchMethodException e) {
+          throw new RuntimeException(e);
+        }
       }
     }
   }
@@ -604,7 +646,7 @@ public class ProjectWorkspace extends AbstractWorkspace {
     DefaultCellPathResolver rootCellCellPathResolver =
         DefaultCellPathResolver.of(filesystem.getRootPath(), config);
 
-    ImmutableMap<String, String> env = ImmutableMap.copyOf(System.getenv());
+    ImmutableMap<String, String> env = EnvVariablesProvider.getSystemEnv();
     BuckConfig buckConfig =
         FakeBuckConfig.builder()
             .setSections(config.getRawConfig())

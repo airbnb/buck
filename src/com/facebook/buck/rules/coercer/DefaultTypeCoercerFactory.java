@@ -19,6 +19,8 @@ package com.facebook.buck.rules.coercer;
 import com.facebook.buck.core.cell.CellPathResolver;
 import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.model.Flavor;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPattern;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.select.SelectorList;
 import com.facebook.buck.core.select.impl.SelectorFactory;
 import com.facebook.buck.core.select.impl.SelectorListFactory;
@@ -26,8 +28,6 @@ import com.facebook.buck.core.sourcepath.SourcePath;
 import com.facebook.buck.core.sourcepath.SourceWithFlags;
 import com.facebook.buck.core.util.immutables.BuckStyleImmutable;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
-import com.facebook.buck.parser.BuildTargetPattern;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.rules.macros.CcFlagsMacro;
 import com.facebook.buck.rules.macros.CcMacro;
 import com.facebook.buck.rules.macros.ClasspathAbiMacro;
@@ -36,6 +36,7 @@ import com.facebook.buck.rules.macros.CppFlagsMacro;
 import com.facebook.buck.rules.macros.CxxFlagsMacro;
 import com.facebook.buck.rules.macros.CxxMacro;
 import com.facebook.buck.rules.macros.CxxppFlagsMacro;
+import com.facebook.buck.rules.macros.EnvMacro;
 import com.facebook.buck.rules.macros.ExecutableMacro;
 import com.facebook.buck.rules.macros.LdMacro;
 import com.facebook.buck.rules.macros.LdflagsSharedFilterMacro;
@@ -92,7 +93,7 @@ public class DefaultTypeCoercerFactory implements TypeCoercerFactory {
   public DefaultTypeCoercerFactory(
       PathTypeCoercer.PathExistenceVerificationMode pathExistenceVerificationMode) {
     this.pathExistenceVerificationMode = pathExistenceVerificationMode;
-    TypeCoercer<String> stringTypeCoercer = new IdentityTypeCoercer<>(String.class);
+    TypeCoercer<String> stringTypeCoercer = new StringTypeCoercer();
     TypeCoercer<Flavor> flavorTypeCoercer = new FlavorTypeCoercer();
     // This has no implementation, but is here so that constructor succeeds so that it can be
     // queried. This is only used for the visibility field, which is not actually handled by the
@@ -115,7 +116,7 @@ public class DefaultTypeCoercerFactory implements TypeCoercerFactory {
           }
         };
     TypeCoercer<BuildTarget> buildTargetTypeCoercer = new BuildTargetTypeCoercer();
-    PathTypeCoercer pathTypeCoercer = new PathTypeCoercer(pathExistenceVerificationMode);
+    PathTypeCoercer pathTypeCoercer = new PathTypeCoercer();
     TypeCoercer<SourcePath> sourcePathTypeCoercer =
         new SourcePathTypeCoercer(buildTargetTypeCoercer, pathTypeCoercer);
     TypeCoercer<SourceWithFlags> sourceWithFlagsTypeCoercer =
@@ -125,7 +126,7 @@ public class DefaultTypeCoercerFactory implements TypeCoercerFactory {
     TypeCoercer<NeededCoverageSpec> neededCoverageSpecTypeCoercer =
         new NeededCoverageSpecTypeCoercer(
             intTypeCoercer, buildTargetTypeCoercer, stringTypeCoercer);
-    TypeCoercer<Query> queryTypeCoercer = new QueryCoercer();
+    TypeCoercer<Query> queryTypeCoercer = new QueryCoercer(this);
     TypeCoercer<ImmutableList<BuildTarget>> buildTargetsTypeCoercer =
         new ListTypeCoercer<>(buildTargetTypeCoercer);
     nonParameterizedTypeCoercers =
@@ -170,6 +171,7 @@ public class DefaultTypeCoercerFactory implements TypeCoercerFactory {
                   .put("classpath", ClasspathMacro.class)
                   .put("classpath_abi", ClasspathAbiMacro.class)
                   .put("exe", ExecutableMacro.class)
+                  .put("env", EnvMacro.class)
                   .put("location", LocationMacro.class)
                   .put("maven_coords", MavenCoordinatesMacro.class)
                   .put("output", OutputMacro.class)
@@ -200,6 +202,7 @@ public class DefaultTypeCoercerFactory implements TypeCoercerFactory {
                       buildTargetTypeCoercer, ClasspathAbiMacro.class, ClasspathAbiMacro::of),
                   new BuildTargetMacroTypeCoercer<>(
                       buildTargetTypeCoercer, ExecutableMacro.class, ExecutableMacro::of),
+                  new EnvMacroTypeCoercer(),
                   new LocationMacroTypeCoercer(buildTargetTypeCoercer),
                   new BuildTargetMacroTypeCoercer<>(
                       buildTargetTypeCoercer,

@@ -35,6 +35,7 @@ import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.BuckEventBusForTests;
 import com.facebook.buck.io.ExecutableFinder;
 import com.facebook.buck.io.watchman.WatchmanFactory;
+import com.facebook.buck.manifestservice.ManifestService;
 import com.facebook.buck.parser.api.BuildFileManifest;
 import com.facebook.buck.parser.api.BuildFileManifestFactory;
 import com.facebook.buck.parser.api.ForwardingProjectBuildFileParserDecorator;
@@ -42,14 +43,16 @@ import com.facebook.buck.parser.api.ProjectBuildFileParser;
 import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.parser.exceptions.NoSuchBuildTargetException;
 import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
+import com.facebook.buck.rules.coercer.DefaultConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
-import com.facebook.buck.rules.keys.config.TestRuleKeyConfigurationFactory;
+import com.facebook.buck.testutil.FakeFileHashCache;
 import com.facebook.buck.testutil.ProcessResult;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.TestConsole;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.TestDataHelper;
+import com.facebook.buck.util.ThrowingCloseableMemoizedSupplier;
 import com.facebook.buck.util.concurrent.MostExecutors;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -343,6 +346,10 @@ public class ParsePipelineTest {
     private final ListeningExecutorService executorService;
     private final Set<CloseRecordingProjectBuildFileParserDecorator> projectBuildFileParsers;
 
+    private ThrowingCloseableMemoizedSupplier<ManifestService, IOException> getManifestSupplier() {
+      return ThrowingCloseableMemoizedSupplier.of(() -> null, ManifestService::close);
+    }
+
     public Fixture(
         String scenario,
         ListeningExecutorService executorService,
@@ -360,7 +367,7 @@ public class ParsePipelineTest {
       this.rawNodeParsePipelineCache = new TypedParsePipelineCache<>();
       TypeCoercerFactory coercerFactory = new DefaultTypeCoercerFactory();
       ConstructorArgMarshaller constructorArgMarshaller =
-          new ConstructorArgMarshaller(coercerFactory);
+          new DefaultConstructorArgMarshaller(coercerFactory);
 
       projectBuildFileParserPool =
           new ProjectBuildFileParserPool(
@@ -374,7 +381,9 @@ public class ParsePipelineTest {
                                 new ParserPythonInterpreterProvider(
                                     input.getBuckConfig(), new ExecutableFinder()),
                                 TestKnownRuleTypesProvider.create(
-                                    BuckPluginManagerFactory.createPluginManager()))
+                                    BuckPluginManagerFactory.createPluginManager()),
+                                getManifestSupplier(),
+                                new FakeFileHashCache(ImmutableMap.of()))
                             .createBuildFileParser(eventBus, input, watchman));
                 synchronized (projectBuildFileParsers) {
                   projectBuildFileParsers.add(buildFileParser);
@@ -414,8 +423,7 @@ public class ParsePipelineTest {
                   constructorArgMarshaller,
                   buildFileTrees,
                   nodeListener,
-                  new TargetNodeFactory(coercerFactory),
-                  TestRuleKeyConfigurationFactory.create()),
+                  new TargetNodeFactory(coercerFactory)),
               this.executorService,
               this.eventBus,
               speculativeParsing == SpeculativeParsing.ENABLED,

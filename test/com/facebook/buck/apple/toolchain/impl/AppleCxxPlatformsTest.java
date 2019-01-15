@@ -116,7 +116,7 @@ public class AppleCxxPlatformsTest {
   private Path developerDir;
 
   @Before
-  public void setUp() throws InterruptedException {
+  public void setUp() {
     assumeTrue(Platform.detect() == Platform.MACOS || Platform.detect() == Platform.LINUX);
     projectFilesystem = FakeProjectFilesystem.createJavaOnlyFilesystem();
     developerDir = projectFilesystem.getPath("/Developer");
@@ -763,7 +763,7 @@ public class AppleCxxPlatformsTest {
 
   // Create and return some rule keys from a dummy source for the given platforms.
   private ImmutableMap<Flavor, RuleKey> constructCompileRuleKeys(
-      Operation operation, ImmutableMap<Flavor, AppleCxxPlatform> cxxPlatforms) throws IOException {
+      Operation operation, ImmutableMap<Flavor, AppleCxxPlatform> cxxPlatforms) {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(graphBuilder);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
@@ -1077,8 +1077,7 @@ public class AppleCxxPlatformsTest {
   }
 
   @Test
-  public void appleCxxPlatformWhenNoSwiftToolchainPreferredShouldUseDefaultSwift()
-      throws IOException {
+  public void appleCxxPlatformWhenNoSwiftToolchainPreferredShouldUseDefaultSwift() {
     AppleCxxPlatform platformWithDefaultSwift = buildAppleCxxPlatformWithSwiftToolchain();
     Optional<SwiftPlatform> swiftPlatformOptional = platformWithDefaultSwift.getSwiftPlatform();
     assertThat(swiftPlatformOptional.isPresent(), is(true));
@@ -1168,6 +1167,20 @@ public class AppleCxxPlatformsTest {
             .build(RuleKey::new);
 
     assertNotEquals(ibtoolRuleKey1, ibtoolRuleKey2);
+  }
+
+  @Test
+  public void useFlavoredCxxSections() {
+    AppleCxxPlatform appleCxxPlatform =
+        buildAppleCxxPlatform(
+            projectFilesystem.getPath("/Developer1"),
+            FakeBuckConfig.builder()
+                .setSections(
+                    ImmutableMap.of(
+                        "cxx#iphonesimulator8.0-armv7", ImmutableMap.of("cxxflags", "-flag"),
+                        "apple", ImmutableMap.of("use_flavored_cxx_sections", "true")))
+                .build());
+    assertThat(appleCxxPlatform.getCxxPlatform().getCxxflags(), hasItem("-flag"));
   }
 
   private AppleCxxPlatform buildAppleCxxPlatformWithSwiftToolchain() {

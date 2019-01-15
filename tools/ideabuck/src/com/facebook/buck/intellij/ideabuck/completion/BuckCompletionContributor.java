@@ -17,6 +17,7 @@
 package com.facebook.buck.intellij.ideabuck.completion;
 
 import com.facebook.buck.intellij.ideabuck.lang.BuckLanguage;
+import com.facebook.buck.intellij.ideabuck.lang.psi.BuckPsiUtils;
 import com.facebook.buck.intellij.ideabuck.lang.psi.BuckTypes;
 import com.google.common.collect.ImmutableList;
 import com.intellij.codeInsight.completion.CompletionContributor;
@@ -26,7 +27,11 @@ import com.intellij.codeInsight.completion.CompletionResultSet;
 import com.intellij.codeInsight.completion.CompletionType;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
 import com.intellij.patterns.PlatformPatterns;
+import com.intellij.psi.PsiElement;
 import com.intellij.util.ProcessingContext;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /** Auto-completion for keywords and rule names */
 public class BuckCompletionContributor extends CompletionContributor {
@@ -34,16 +39,11 @@ public class BuckCompletionContributor extends CompletionContributor {
   // TODO(#7908512): Need to pull those information from Buck.
   private static final ImmutableList<String> sPropertyNames =
       ImmutableList.of(
-          "name",
           "res",
           "binary_jar",
-          "srcs",
-          "deps",
           "manifest",
           "manifest_skeleton",
           "package_type",
-          "glob",
-          "visibility",
           "aar",
           "src_target",
           "src_roots",
@@ -51,10 +51,8 @@ public class BuckCompletionContributor extends CompletionContributor {
           "source_under_test",
           "test_library_project_dir",
           "contacts",
-          "exported_deps",
           "excludes",
           "main",
-          "resources",
           "javadoc_url",
           "store",
           "properties",
@@ -97,14 +95,12 @@ public class BuckCompletionContributor extends CompletionContributor {
           "java_binary",
           "java_library",
           "java_test",
-          "load",
           "prebuilt_jar",
           "prebuilt_native_library",
           "prebuilt_python_library",
           "python_binary",
           "python_library",
           "python_test",
-          "glob",
           "include_defs",
           "robolectric_test",
           "keystore");
@@ -125,6 +121,12 @@ public class BuckCompletionContributor extends CompletionContributor {
     @Override
     protected void addCompletions(
         CompletionParameters parameters, ProcessingContext context, CompletionResultSet result) {
+      Optional.of(parameters.getPosition())
+          .map(PsiElement::getContainingFile)
+          .map(psiFile -> BuckPsiUtils.findSymbolsInPsiTree(psiFile, ""))
+          .map(Map::keySet)
+          .map(Set::stream)
+          .ifPresent(names -> names.map(LookupElementBuilder::create).forEach(result::addElement));
       for (String card : sPropertyNames) {
         result.addElement(LookupElementBuilder.create(card));
       }

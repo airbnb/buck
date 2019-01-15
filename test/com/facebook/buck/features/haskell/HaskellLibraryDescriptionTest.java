@@ -35,7 +35,9 @@ import com.facebook.buck.core.rules.resolver.impl.TestActionGraphBuilder;
 import com.facebook.buck.core.sourcepath.FakeSourcePath;
 import com.facebook.buck.core.sourcepath.resolver.SourcePathResolver;
 import com.facebook.buck.core.sourcepath.resolver.impl.DefaultSourcePathResolver;
+import com.facebook.buck.cxx.toolchain.ArchiveContents;
 import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
 import com.facebook.buck.cxx.toolchain.linker.Linker;
 import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
@@ -76,26 +78,26 @@ public class HaskellLibraryDescriptionTest {
   }
 
   @Test
-  public void targetsAndOutputsAreDifferentBetweenLinkStyles() throws Exception {
+  public void targetsAndOutputsAreDifferentBetweenLinkStyles() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder(TargetGraphFactory.newInstance());
     BuildTarget baseTarget = BuildTargetFactory.newInstance("//:rule");
 
     BuildRule staticLib =
         new HaskellLibraryBuilder(
                 baseTarget.withFlavors(
-                    CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor(),
+                    CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR,
                     HaskellLibraryDescription.Type.STATIC.getFlavor()))
             .build(graphBuilder);
     BuildRule staticPicLib =
         new HaskellLibraryBuilder(
                 baseTarget.withFlavors(
-                    CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor(),
+                    CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR,
                     HaskellLibraryDescription.Type.STATIC_PIC.getFlavor()))
             .build(graphBuilder);
     BuildRule sharedLib =
         new HaskellLibraryBuilder(
                 baseTarget.withFlavors(
-                    CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor(),
+                    CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR,
                     HaskellLibraryDescription.Type.SHARED.getFlavor()))
             .build(graphBuilder);
 
@@ -161,7 +163,7 @@ public class HaskellLibraryDescriptionTest {
   }
 
   @Test
-  public void preferredLinkage() throws Exception {
+  public void preferredLinkage() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder(TargetGraphFactory.newInstance());
 
     // Test default value.
@@ -201,16 +203,20 @@ public class HaskellLibraryDescriptionTest {
 
   @Test
   public void thinArchivesPropagatesDepFromObjects() {
+    CxxPlatform cxxPlatform =
+        CxxPlatformUtils.DEFAULT_PLATFORM.withArchiveContents(ArchiveContents.THIN);
+    HaskellPlatform haskellPlatform =
+        HaskellTestUtils.DEFAULT_PLATFORM.withCxxPlatform(cxxPlatform);
+    FlavorDomain<HaskellPlatform> haskellPlatforms =
+        FlavorDomain.of("Haskell Platforms", haskellPlatform);
+
     BuildTarget target = BuildTargetFactory.newInstance("//:rule");
-    CxxBuckConfig cxxBuckConfig =
-        new CxxBuckConfig(
-            FakeBuckConfig.builder().setSections("[cxx]", "archive_contents=thin").build());
     HaskellLibraryBuilder builder =
         new HaskellLibraryBuilder(
                 target,
-                HaskellTestUtils.DEFAULT_PLATFORM,
-                HaskellTestUtils.DEFAULT_PLATFORMS,
-                cxxBuckConfig)
+                haskellPlatform,
+                haskellPlatforms,
+                new CxxBuckConfig(FakeBuckConfig.builder().build()))
             .setSrcs(
                 SourceSortedSet.ofUnnamedSources(
                     ImmutableSortedSet.of(FakeSourcePath.of("Test.hs"))))
@@ -221,8 +227,7 @@ public class HaskellLibraryDescriptionTest {
 
     // Test static dep type.
     NativeLinkableInput staticInput =
-        library.getNativeLinkableInput(
-            CxxPlatformUtils.DEFAULT_PLATFORM, Linker.LinkableDepType.STATIC, graphBuilder);
+        library.getNativeLinkableInput(cxxPlatform, Linker.LinkableDepType.STATIC, graphBuilder);
     assertThat(
         FluentIterable.from(staticInput.getArgs())
             .transformAndConcat(
@@ -232,10 +237,7 @@ public class HaskellLibraryDescriptionTest {
             .toList(),
         Matchers.hasItem(
             HaskellDescriptionUtils.getCompileBuildTarget(
-                library.getBuildTarget(),
-                HaskellTestUtils.DEFAULT_PLATFORM,
-                Linker.LinkableDepType.STATIC,
-                false)));
+                library.getBuildTarget(), haskellPlatform, Linker.LinkableDepType.STATIC, false)));
   }
 
   @Test
@@ -250,8 +252,7 @@ public class HaskellLibraryDescriptionTest {
                 PatternMatchedCollection.<ImmutableSortedSet<BuildTarget>>builder()
                     .add(
                         Pattern.compile(
-                            CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor().toString(),
-                            Pattern.LITERAL),
+                            CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR.toString(), Pattern.LITERAL),
                         ImmutableSortedSet.of(depABuilder.getTarget()))
                     .add(
                         Pattern.compile("matches nothing", Pattern.LITERAL),

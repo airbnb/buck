@@ -17,7 +17,6 @@
 package com.facebook.buck.shell;
 
 import static com.facebook.buck.core.cell.TestCellBuilder.createCellRoots;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
@@ -36,6 +35,7 @@ import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.io.filesystem.impl.AllExistingProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
 import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
+import com.facebook.buck.rules.coercer.DefaultConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.macros.ClasspathMacro;
 import com.facebook.buck.rules.macros.StringWithMacrosUtils;
@@ -44,7 +44,6 @@ import com.facebook.buck.sandbox.NoSandboxExecutionStrategy;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.hash.Hashing;
 import java.nio.file.Paths;
 import java.util.Map;
 import org.hamcrest.Matchers;
@@ -72,7 +71,7 @@ public class GenruleDescriptionTest {
             "$(exe //bin:executable) $(location :arg)");
     ProjectFilesystem projectFilesystem = new AllExistingProjectFilesystem();
     ConstructorArgMarshaller marshaller =
-        new ConstructorArgMarshaller(new DefaultTypeCoercerFactory());
+        new DefaultConstructorArgMarshaller(new DefaultTypeCoercerFactory());
     ImmutableSet.Builder<BuildTarget> declaredDeps = ImmutableSet.builder();
     ImmutableSet.Builder<VisibilityPattern> visibilityPatterns = ImmutableSet.builder();
     ImmutableSet.Builder<VisibilityPattern> withinViewPatterns = ImmutableSet.builder();
@@ -87,7 +86,6 @@ public class GenruleDescriptionTest {
     TargetNode<GenruleDescriptionArg> targetNode =
         new TargetNodeFactory(new DefaultTypeCoercerFactory())
             .createFromObject(
-                Hashing.sha1().hashString(buildTarget.getFullyQualifiedName(), UTF_8),
                 genruleDescription,
                 constructorArg,
                 projectFilesystem,

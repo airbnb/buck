@@ -60,6 +60,9 @@ public interface Parser {
   SortedMap<String, Object> getTargetNodeRawAttributes(
       PerBuildState state, Cell cell, TargetNode<?> targetNode) throws BuildFileParseException;
 
+  ListenableFuture<SortedMap<String, Object>> getTargetNodeRawAttributesJob(
+      PerBuildState state, Cell cell, TargetNode<?> targetNode) throws BuildFileParseException;
+
   /**
    * @deprecated Prefer {@link #getTargetNodeRawAttributes(PerBuildState, Cell, TargetNode)} and
    *     reusing a PerBuildState instance, especially when calling in a loop.
@@ -92,11 +95,25 @@ public interface Parser {
    * @param targetNodeSpecs the specs representing the build targets to generate a target graph for.
    * @return the target graph containing the build targets and their related targets.
    */
-  TargetGraphAndBuildTargets buildTargetGraphForTargetNodeSpecs(
+  TargetGraphAndBuildTargets buildTargetGraphWithoutConfigurationTargets(
       Cell rootCell,
       boolean enableProfiling,
       ListeningExecutorService executor,
       Iterable<? extends TargetNodeSpec> targetNodeSpecs,
+      boolean excludeUnsupportedTargets,
+      ParserConfig.ApplyDefaultFlavorsMode applyDefaultFlavorsMode)
+      throws BuildFileParseException, IOException, InterruptedException;
+
+  /**
+   * @param targetNodeSpecs the specs representing the build targets to generate a target graph for.
+   * @return the target graph containing the build targets and their related targets.
+   */
+  TargetGraphAndBuildTargets buildTargetGraphWithConfigurationTargets(
+      Cell rootCell,
+      boolean enableProfiling,
+      ListeningExecutorService executor,
+      Iterable<? extends TargetNodeSpec> targetNodeSpecs,
+      boolean excludeUnsupportedTargets,
       ParserConfig.ApplyDefaultFlavorsMode applyDefaultFlavorsMode)
       throws BuildFileParseException, IOException, InterruptedException;
 
@@ -107,5 +124,15 @@ public interface Parser {
       Iterable<? extends TargetNodeSpec> specs,
       SpeculativeParsing speculativeParsing,
       ParserConfig.ApplyDefaultFlavorsMode applyDefaultFlavorsMode)
+      throws BuildFileParseException, InterruptedException, IOException;
+
+  ImmutableList<ImmutableSet<BuildTarget>> resolveTargetSpecs(
+      Cell rootCell,
+      boolean enableProfiling,
+      ListeningExecutorService executor,
+      Iterable<? extends TargetNodeSpec> specs,
+      SpeculativeParsing speculativeParsing,
+      ParserConfig.ApplyDefaultFlavorsMode applyDefaultFlavorsMode,
+      boolean excludeUnsupportedTargets)
       throws BuildFileParseException, InterruptedException, IOException;
 }

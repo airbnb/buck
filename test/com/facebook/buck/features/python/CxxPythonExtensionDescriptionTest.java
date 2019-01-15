@@ -189,7 +189,7 @@ public class CxxPythonExtensionDescriptionTest {
     BuildRule rule =
         graphBuilder.getRule(
             CxxPythonExtensionDescription.getExtensionTarget(
-                target, PY2.getFlavor(), CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor()));
+                target, PY2.getFlavor(), CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR));
     assertThat(
         rule.getBuildDeps(),
         Matchers.hasItems(
@@ -221,7 +221,7 @@ public class CxxPythonExtensionDescriptionTest {
     BuildRule rule =
         graphBuilder.getRule(
             CxxPythonExtensionDescription.getExtensionTarget(
-                target, PY2.getFlavor(), CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor()));
+                target, PY2.getFlavor(), CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR));
     PythonPackageComponents expectedComponents =
         PythonPackageComponents.of(
             ImmutableMap.of(
@@ -315,7 +315,7 @@ public class CxxPythonExtensionDescriptionTest {
   }
 
   @Test
-  public void nativeLinkTargetMode() throws Exception {
+  public void nativeLinkTargetMode() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
     CxxPythonExtensionBuilder builder =
         new CxxPythonExtensionBuilder(
@@ -331,7 +331,7 @@ public class CxxPythonExtensionDescriptionTest {
   }
 
   @Test
-  public void nativeLinkTargetDeps() throws Exception {
+  public void nativeLinkTargetDeps() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
     CxxLibrary dep =
         (CxxLibrary)
@@ -398,7 +398,7 @@ public class CxxPythonExtensionDescriptionTest {
   }
 
   @Test
-  public void platformDeps() throws Exception {
+  public void platformDeps() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
     CxxLibrary dep =
         (CxxLibrary)
@@ -506,7 +506,7 @@ public class CxxPythonExtensionDescriptionTest {
   }
 
   @Test
-  public void moduleName() throws Exception {
+  public void moduleName() {
     ActionGraphBuilder graphBuilder = new TestActionGraphBuilder();
     CxxPythonExtension cxxPythonExtension =
         new CxxPythonExtensionBuilder(
@@ -537,7 +537,7 @@ public class CxxPythonExtensionDescriptionTest {
             builder
                 .getTarget()
                 .withAppendedFlavors(
-                    CxxPlatformUtils.DEFAULT_PLATFORM.getFlavor(),
+                    CxxPlatformUtils.DEFAULT_PLATFORM_FLAVOR,
                     PY2.getFlavor(),
                     Type.COMPILATION_DATABASE.getFlavor()));
     assertThat(rule, Matchers.instanceOf(CxxCompilationDatabase.class));

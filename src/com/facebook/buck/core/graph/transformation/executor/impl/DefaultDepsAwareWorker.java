@@ -16,8 +16,8 @@
 
 package com.facebook.buck.core.graph.transformation.executor.impl;
 
-import com.facebook.buck.core.graph.transformation.executor.impl.DefaultDepsAwareTask.TaskStatus;
-import com.google.common.base.Preconditions;
+import com.facebook.buck.core.graph.transformation.executor.impl.AbstractDepsAwareTask.TaskStatus;
+import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -33,32 +33,29 @@ import java.util.concurrent.LinkedBlockingDeque;
  * <p>Blocking operations that are ran in the {@link DefaultDepsAwareTask} will block the thread,
  * and its corresponding worker.
  */
-class DefaultDepsAwareWorker {
+class DefaultDepsAwareWorker extends AbstractDepsAwareWorker<DefaultDepsAwareTask<?>> {
 
-  private final LinkedBlockingDeque<DefaultDepsAwareTask<?>> sharedQueue;
-
+  /**
+   * The {@link TaskStatus} is used to synchronize between tasks.
+   *
+   * <p>{@link DefaultDepsAwareTask}s in the queue should always have a status of {@link
+   * TaskStatus#SCHEDULED}. This is atomically set and used to ensure tasks that are already {@link
+   * TaskStatus#STARTED} is not rescheduled to the front of the queue. Tasks that are already {@link
+   * TaskStatus#SCHEDULED} should not be resubmitted to the queue. Completed tasks should be {@link
+   * TaskStatus#DONE} to avoid recomputation by another worker.
+   */
   DefaultDepsAwareWorker(LinkedBlockingDeque<DefaultDepsAwareTask<?>> sharedQueue) {
-    this.sharedQueue = sharedQueue;
+    super(sharedQueue);
   }
 
-  /** Runs the scheduled loop forever until shutdown */
-  void loopForever() throws InterruptedException {
-    while (!Thread.currentThread().isInterrupted()) {
-      loopOnce();
-    }
+  @Override
+  protected DefaultDepsAwareTask<?> takeTask() throws InterruptedException {
+    return sharedQueue.take();
   }
 
-  /** Runs one job, blocking for the task */
-  void loopOnce() throws InterruptedException {
-    boolean completedOne = false;
-    while (!completedOne) {
-      DefaultDepsAwareTask<?> task = sharedQueue.take();
-      completedOne = eval(task);
-    }
-  }
-
-  private boolean eval(DefaultDepsAwareTask<?> task) throws InterruptedException {
-    if (!task.compareAndSetStatus(TaskStatus.NOT_STARTED, TaskStatus.STARTED)) {
+  @Override
+  protected boolean eval(DefaultDepsAwareTask<?> task) throws InterruptedException {
+    if (!task.compareAndSetStatus(TaskStatus.SCHEDULED, TaskStatus.STARTED)) {
       return false;
     }
 
@@ -67,7 +64,7 @@ class DefaultDepsAwareWorker {
       deps = task.getDependencies();
     } catch (Exception e) {
       task.getFuture().completeExceptionally(e);
-      Preconditions.checkState(task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.DONE));
+      Verify.verify(task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.DONE));
       return true;
     }
 
@@ -77,23 +74,22 @@ class DefaultDepsAwareWorker {
         depsDone = false;
         if (dep.getStatus() == TaskStatus.STARTED) {
           continue;
-        } else {
+        } else if (dep.compareAndSetStatus(TaskStatus.NOT_SCHEDULED, TaskStatus.SCHEDULED)) {
           sharedQueue.putFirst(dep);
         }
       }
       if (propagateException(task, dep)) {
+        Verify.verify(task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.DONE));
         return true;
       }
     }
 
     if (!depsDone) {
-      Preconditions.checkState(
-          task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.NOT_STARTED));
+      Verify.verify(task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.SCHEDULED));
       sharedQueue.put(task);
       return false;
     }
     task.call();
-    Preconditions.checkState(task.compareAndSetStatus(TaskStatus.STARTED, TaskStatus.DONE));
     return true;
   }
 
@@ -105,7 +101,7 @@ class DefaultDepsAwareWorker {
     }
     try {
       depResult.get();
-      Preconditions.checkState(false, "Should have completed exceptionally");
+      Verify.verify(false, "Should have completed exceptionally");
     } catch (ExecutionException e) {
       task.getFuture().completeExceptionally(e.getCause());
     }

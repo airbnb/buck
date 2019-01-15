@@ -16,15 +16,20 @@
 
 package com.facebook.buck.intellij.ideabuck.api;
 
-import com.intellij.openapi.components.ProjectComponent;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 /**
  * A project-level service that provides information about the project's buck's cell configuration.
  */
-public interface BuckCellManager extends ProjectComponent {
+public interface BuckCellManager {
+
+  static BuckCellManager getInstance(Project project) {
+    return project.getComponent(BuckCellManager.class);
+  }
 
   /** Information about a single buck cell. */
   interface Cell {
@@ -55,6 +60,9 @@ public interface BuckCellManager extends ProjectComponent {
    * <p>All buck commands for this project should be run from a working directory inside this cell.
    */
   Optional<? extends Cell> getDefaultCell();
+
+  /** Returns all the cells for this project. */
+  List<? extends Cell> getCells();
 
   /** Returns a {@link Cell} with a matching name, if it exists. */
   Optional<? extends Cell> findCellByName(String name);

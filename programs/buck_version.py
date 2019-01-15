@@ -1,3 +1,17 @@
+# Copyright 2018-present Facebook, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
 from __future__ import print_function
 
 import os
@@ -44,7 +58,7 @@ def is_git(dirpath):  # type: (str) -> bool
                     ["git", "rev-parse", "--is-inside-work-tree"],
                     cwd=dirpath,
                     stderr=devnull,
-                )
+                ).decode("utf-8")
             return output.strip() == "true"
         except CalledProcessError:
             pass
@@ -61,7 +75,7 @@ def is_dirty(dirpath):  # type: (str) -> bool
     if not is_git(dirpath):
         return False
 
-    output = check_output(["git", "status", "--porcelain"], cwd=dirpath)
+    output = check_output(["git", "status", "--porcelain"], cwd=dirpath).decode("utf-8")
     output = "\n".join(
         [line for line in output.splitlines() if not IGNORE_PATHS_RE.search(line)]
     )
@@ -69,14 +83,20 @@ def is_dirty(dirpath):  # type: (str) -> bool
 
 
 def get_git_revision(dirpath):  # type: (str) -> str
-    output = check_output(["git", "rev-parse", "HEAD", "--"], cwd=dirpath)
+    output = check_output(["git", "rev-parse", "HEAD", "--"], cwd=dirpath).decode(
+        "utf-8"
+    )
     return output.splitlines()[0].strip()
 
 
 def get_git_revision_timestamp(dirpath):  # type: (str) -> str
-    return check_output(
-        ["git", "log", "--pretty=format:%ct", "-1", "HEAD", "--"], cwd=dirpath
-    ).strip()
+    return (
+        check_output(
+            ["git", "log", "--pretty=format:%ct", "-1", "HEAD", "--"], cwd=dirpath
+        )
+        .decode("utf-8")
+        .strip()
+    )
 
 
 def get_clean_buck_version(dirpath, allow_dirty=False):  # type: (str, bool) -> str
@@ -87,9 +107,13 @@ def get_clean_buck_version(dirpath, allow_dirty=False):  # type: (str, bool) -> 
 
 
 def get_dirty_buck_version(dirpath):  # type: (str) -> str
-    git_tree_in = check_output(
-        ["git", "log", "-n1", "--pretty=format:%T", "HEAD", "--"], cwd=dirpath
-    ).strip()
+    git_tree_in = (
+        check_output(
+            ["git", "log", "-n1", "--pretty=format:%T", "HEAD", "--"], cwd=dirpath
+        )
+        .decode("utf-8")
+        .strip()
+    )
 
     with EmptyTempFile(prefix="buck-git-index") as index_file:
         new_environ = os.environ.copy()
@@ -100,9 +124,11 @@ def get_dirty_buck_version(dirpath):  # type: (str) -> str
 
         subprocess.check_call(["git", "add", "-A"], cwd=dirpath, env=new_environ)
 
-        git_tree_out = check_output(
-            ["git", "write-tree"], cwd=dirpath, env=new_environ
-        ).strip()
+        git_tree_out = (
+            check_output(["git", "write-tree"], cwd=dirpath, env=new_environ)
+            .decode("utf-8")
+            .strip()
+        )
 
     with EmptyTempFile(prefix="buck-version-uid-input", closed=False) as uid_input:
         subprocess.check_call(
@@ -110,4 +136,8 @@ def get_dirty_buck_version(dirpath):  # type: (str) -> str
             cwd=dirpath,
             stdout=uid_input,
         )
-        return check_output(["git", "hash-object", uid_input.name], cwd=dirpath).strip()
+        return (
+            check_output(["git", "hash-object", uid_input.name], cwd=dirpath)
+            .decode("utf-8")
+            .strip()
+        )

@@ -16,6 +16,7 @@
 
 package com.facebook.buck.cxx.toolchain;
 
+import com.facebook.buck.core.rulekey.AddToRuleKey;
 import com.facebook.buck.core.toolchain.tool.DelegatingTool;
 import com.facebook.buck.core.toolchain.tool.Tool;
 import com.facebook.buck.util.MoreIterables;
@@ -27,8 +28,16 @@ import java.nio.file.Path;
 /** Preprocessor implementation for the Clang toolchain. */
 public class ClangPreprocessor extends DelegatingTool implements Preprocessor {
 
+  @AddToRuleKey private final boolean useUnixPathSeparator;
+
   public ClangPreprocessor(Tool tool) {
     super(tool);
+    useUnixPathSeparator = false;
+  }
+
+  public ClangPreprocessor(Tool tool, boolean useUnixPathSeparator) {
+    super(tool);
+    this.useUnixPathSeparator = useUnixPathSeparator;
   }
 
   @Override
@@ -75,5 +84,10 @@ public class ClangPreprocessor extends DelegatingTool implements Preprocessor {
         // Force clang to accept pch even if mtime of its input changes, since buck tracks
         // input contents, this should be safe.
         "-Wp,-fno-validate-pch");
+  }
+
+  /** @returns whether this tool requires Unix path separated paths. */
+  public boolean getUseUnixPathSeparator() {
+    return useUnixPathSeparator;
   }
 }

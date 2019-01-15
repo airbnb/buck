@@ -51,20 +51,25 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /** Responsible for discovering all the build targets that match a set of {@link TargetNodeSpec}. */
 public class TargetSpecResolver {
+
+  private final BuckEventBus eventBus;
+  private final Watchman watchman;
+
+  public TargetSpecResolver(BuckEventBus eventBus, Watchman watchman) {
+    this.eventBus = eventBus;
+    this.watchman = watchman;
+  }
 
   /**
    * @return a list of sets of build targets where each set contains all build targets that match a
    *     corresponding {@link TargetNodeSpec}.
    */
   public <T extends HasBuildTarget> ImmutableList<ImmutableSet<BuildTarget>> resolveTargetSpecs(
-      BuckEventBus eventBus,
       Cell rootCell,
-      Watchman watchman,
       Iterable<? extends TargetNodeSpec> specs,
       FlavorEnhancer<T> flavorEnhancer,
       TargetNodeProviderForSpecResolver<T> targetNodeProvider,
@@ -75,8 +80,7 @@ public class TargetSpecResolver {
     // when returning results.
     ImmutableList<TargetNodeSpec> orderedSpecs = ImmutableList.copyOf(specs);
 
-    Multimap<Path, Integer> perBuildFileSpecs =
-        groupSpecsByBuildFile(eventBus, rootCell, watchman, orderedSpecs);
+    Multimap<Path, Integer> perBuildFileSpecs = groupSpecsByBuildFile(rootCell, orderedSpecs);
 
     // Kick off parse futures for each build file.
     ArrayList<ListenableFuture<Map.Entry<Integer, ImmutableSet<BuildTarget>>>> targetFutures =
@@ -112,10 +116,7 @@ public class TargetSpecResolver {
   // Resolve all the build files from all the target specs.  We store these into a multi-map which
   // maps the path to the build file to the index of it's spec file in the ordered spec list.
   private Multimap<Path, Integer> groupSpecsByBuildFile(
-      BuckEventBus eventBus,
-      Cell rootCell,
-      Watchman watchman,
-      ImmutableList<TargetNodeSpec> orderedSpecs)
+      Cell rootCell, ImmutableList<TargetNodeSpec> orderedSpecs)
       throws IOException, InterruptedException {
     ParserConfig parserConfig = rootCell.getBuckConfig().getView(ParserConfig.class);
     ParserConfig.BuildFileSearchMethod buildFileSearchMethod =
@@ -136,16 +137,19 @@ public class TargetSpecResolver {
         parsingIgnores.addAll(filesystem.getBlacklistedPaths());
         parsingIgnores.add(RecursiveFileMatcher.of(filesystem.getBuckPaths().getBuckOut()));
         for (Path subCellRoots : cell.getKnownRoots()) {
-          parsingIgnores.add(RecursiveFileMatcher.of(filesystem.relativize(subCellRoots)));
+          if (!subCellRoots.equals(cell.getRoot())) {
+            parsingIgnores.add(RecursiveFileMatcher.of(filesystem.relativize(subCellRoots)));
+          }
         }
 
         buildFiles =
             spec.getBuildFileSpec()
                 .findBuildFiles(
                     cell.getBuildFileName(),
-                    filesystem.asView().withView(Paths.get(""), parsingIgnores.build()),
+                    filesystem.asView().withView(Paths.get(""), ImmutableSet.of()),
                     watchman,
-                    buildFileSearchMethod);
+                    buildFileSearchMethod,
+                    parsingIgnores.build());
       }
       for (Path buildFile : buildFiles) {
         perBuildFileSpecs.put(buildFile, index);
@@ -227,9 +231,8 @@ public class TargetSpecResolver {
       FlavorEnhancer<T> flavorEnhancer,
       TargetNodeFilterForSpecResolver<T> targetNodeFilter) {
     ImmutableSet.Builder<BuildTarget> targets = ImmutableSet.builder();
-    ImmutableMap<BuildTarget, Optional<T>> partialTargets =
-        targetNodeFilter.filter(spec, targetNodes);
-    for (Map.Entry<BuildTarget, Optional<T>> partialTarget : partialTargets.entrySet()) {
+    ImmutableMap<BuildTarget, T> partialTargets = targetNodeFilter.filter(spec, targetNodes);
+    for (Map.Entry<BuildTarget, T> partialTarget : partialTargets.entrySet()) {
       BuildTarget target =
           flavorEnhancer.enhanceFlavors(
               partialTarget.getKey(), partialTarget.getValue(), spec.getTargetType());
@@ -241,7 +244,7 @@ public class TargetSpecResolver {
   /** Allows to change flavors of some targets while performing the resolution. */
   public interface FlavorEnhancer<T extends HasBuildTarget> {
     BuildTarget enhanceFlavors(
-        BuildTarget target, Optional<T> targetNode, TargetNodeSpec.TargetType targetType);
+        BuildTarget target, T targetNode, TargetNodeSpec.TargetType targetType);
   }
 
   /** Provides target nodes of a given type. */
@@ -254,6 +257,6 @@ public class TargetSpecResolver {
 
   /** Performs filtering of target nodes using a given {@link TargetNodeSpec}. */
   public interface TargetNodeFilterForSpecResolver<T extends HasBuildTarget> {
-    ImmutableMap<BuildTarget, Optional<T>> filter(TargetNodeSpec spec, Iterable<T> nodes);
+    ImmutableMap<BuildTarget, T> filter(TargetNodeSpec spec, Iterable<T> nodes);
   }
 }

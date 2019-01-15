@@ -19,7 +19,6 @@ package com.facebook.buck.features.apple.project;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItem;
 import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -40,6 +39,9 @@ import com.facebook.buck.apple.XCodeDescriptions;
 import com.facebook.buck.apple.XCodeDescriptionsFactory;
 import com.facebook.buck.apple.xcode.XCScheme;
 import com.facebook.buck.apple.xcode.XCScheme.AdditionalActions;
+import com.facebook.buck.apple.xcode.XCScheme.BuildActionEntry;
+import com.facebook.buck.apple.xcode.XCScheme.BuildActionEntry.BuildFor;
+import com.facebook.buck.apple.xcode.XCScheme.LaunchAction.WatchInterface;
 import com.facebook.buck.apple.xcode.XCScheme.SchemePrePostAction;
 import com.facebook.buck.core.cell.Cell;
 import com.facebook.buck.core.cell.TestCellBuilder;
@@ -76,13 +78,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -114,7 +116,7 @@ public class WorkspaceAndProjectGeneratorTest {
   @Rule public ExpectedException thrown = ExpectedException.none();
 
   @Before
-  public void setUp() throws InterruptedException, IOException {
+  public void setUp() throws IOException {
     assumeTrue(Platform.detect() == Platform.MACOS);
     xcodeDescriptions =
         XCodeDescriptionsFactory.create(BuckPluginManagerFactory.createPluginManager());
@@ -153,7 +155,8 @@ public class WorkspaceAndProjectGeneratorTest {
     BuildTarget fooTestTarget =
         BuildTargetFactory.newInstance(rootCell.getRoot(), "//foo", "lib-xctest");
 
-    BuildTarget barLibTarget = BuildTargetFactory.newInstance(rootCell.getRoot(), "//bar", "lib");
+    BuildTarget barLibTarget =
+        BuildTargetFactory.newInstance(rootCell.getRoot(), "//bar", "libbar");
     TargetNode<?> barLibNode = AppleLibraryBuilder.createBuilder(barLibTarget).build();
 
     BuildTarget fooLibTarget = BuildTargetFactory.newInstance(rootCell.getRoot(), "//foo", "lib");
@@ -262,7 +265,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -289,7 +293,7 @@ public class WorkspaceAndProjectGeneratorTest {
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
         fooProjectGenerator.getGeneratedProject(), "//foo:lib-xctest");
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
-        barProjectGenerator.getGeneratedProject(), "//bar:lib");
+        barProjectGenerator.getGeneratedProject(), "//bar:libbar");
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
         bazProjectGenerator.getGeneratedProject(), "//baz:lib");
   }
@@ -320,7 +324,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -343,7 +348,7 @@ public class WorkspaceAndProjectGeneratorTest {
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
         projectGenerator.getGeneratedProject(), "//foo:lib-xctest");
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
-        projectGenerator.getGeneratedProject(), "//bar:lib");
+        projectGenerator.getGeneratedProject(), "//bar:libbar");
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
         projectGenerator.getGeneratedProject(), "//baz:lib");
   }
@@ -370,7 +375,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -393,7 +399,7 @@ public class WorkspaceAndProjectGeneratorTest {
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
         fooProjectGenerator.getGeneratedProject(), "//foo:lib");
     ProjectGeneratorTestUtils.assertTargetExistsAndReturnTarget(
-        barProjectGenerator.getGeneratedProject(), "//bar:lib");
+        barProjectGenerator.getGeneratedProject(), "//bar:libbar");
   }
 
   @Test
@@ -406,7 +412,10 @@ public class WorkspaceAndProjectGeneratorTest {
             targetGraph,
             workspaceNode.getConstructorArg(),
             workspaceNode.getBuildTarget(),
-            ProjectGeneratorOptions.builder().setShouldIncludeTests(true).build(),
+            ProjectGeneratorOptions.builder()
+                .setShouldIncludeTests(true)
+                .setShouldGenerateProjectSchemes(true)
+                .build(),
             false /* combinedProject */,
             FocusedModuleTargetMatcher.noFocus(),
             false /* parallelizeBuild */,
@@ -419,31 +428,89 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
 
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
 
-    Optional<XCScheme> scheme =
-        Iterables.getOnlyElement(generator.getSchemeGenerators().values()).getOutputScheme();
+    // one scheme for the workspace and then one for each project
+    assertEquals(generator.getSchemeGenerators().size(), 3);
 
-    assertThat(scheme.isPresent(), is(true));
+    // validate main scheme values
+    Optional<XCScheme> mainScheme =
+        generator.getSchemeGenerators().get("workspace").getOutputScheme();
 
-    assertThat(
-        "Test for project FooBin should have been generated",
-        scheme.get().getBuildAction().get().getBuildActionEntries(),
+    assertThat(mainScheme.isPresent(), is(true));
+
+    XCScheme.BuildAction mainSchemeBuildAction = mainScheme.get().getBuildAction().get();
+    List<BuildActionEntry> mainSchemeBuildActionEntries =
+        mainSchemeBuildAction.getBuildActionEntries();
+    assertThat(mainSchemeBuildActionEntries, hasSize(4));
+    assertThat( // foo:bin
+        mainSchemeBuildActionEntries,
         hasItem(
-            withNameAndBuildingFor(
-                "bin-xctest", equalTo(XCScheme.BuildActionEntry.BuildFor.TEST_ONLY))));
+            withNameAndBuildingFor("bin", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
+    assertThat( // foo:bin-xctest
+        mainSchemeBuildActionEntries,
+        hasItem(withNameAndBuildingFor("bin-xctest", equalTo(BuildFor.TEST_ONLY))));
+    assertThat( // foo:lib
+        mainSchemeBuildActionEntries,
+        hasItem(
+            withNameAndBuildingFor("lib", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
+    assertThat( // bar:libbar
+        mainSchemeBuildActionEntries,
+        hasItem(
+            withNameAndBuildingFor("libbar", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
 
-    assertThat(
-        "Test for project FooLib should not be generated at all",
-        scheme.get().getBuildAction().get().getBuildActionEntries(),
-        not(
-            hasItem(
-                withNameAndBuildingFor(
-                    "lib-xctest", equalTo(XCScheme.BuildActionEntry.BuildFor.TEST_ONLY)))));
+    XCScheme.TestAction mainSchemeTestAction = mainScheme.get().getTestAction().get();
+    assertThat(mainSchemeTestAction.getTestables(), hasSize(1));
+    assertThat( // foo:bin-xctest
+        mainSchemeTestAction.getTestables(), hasItem(withName("bin-xctest")));
+
+    // validate project specific (foo) scheme values
+    Optional<XCScheme> fooScheme = generator.getSchemeGenerators().get("foo").getOutputScheme();
+
+    assertThat(fooScheme.isPresent(), is(true));
+
+    XCScheme.BuildAction fooSchemeBuildAction = fooScheme.get().getBuildAction().get();
+    List<BuildActionEntry> fooSchemeBuildActionEntries =
+        fooSchemeBuildAction.getBuildActionEntries();
+    assertThat(fooSchemeBuildActionEntries, hasSize(3));
+    assertThat( // foo:bin
+        fooSchemeBuildActionEntries,
+        hasItem(
+            withNameAndBuildingFor("bin", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
+    assertThat( // foo:bin-xctest
+        fooSchemeBuildActionEntries,
+        hasItem(withNameAndBuildingFor("bin-xctest", equalTo(BuildFor.TEST_ONLY))));
+    assertThat( // foo:lib
+        fooSchemeBuildActionEntries,
+        hasItem(
+            withNameAndBuildingFor("lib", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
+
+    XCScheme.TestAction fooSchemeTestAction = fooScheme.get().getTestAction().get();
+    assertThat(fooSchemeTestAction.getTestables(), hasSize(1));
+    assertThat( // foo:bin-xctest
+        fooSchemeTestAction.getTestables(), hasItem(withName("bin-xctest")));
+
+    // validate project specific (bar) scheme values
+    Optional<XCScheme> barScheme = generator.getSchemeGenerators().get("bar").getOutputScheme();
+
+    assertThat(barScheme.isPresent(), is(true));
+
+    XCScheme.BuildAction barSchemeBuildAction = barScheme.get().getBuildAction().get();
+    List<BuildActionEntry> barSchemeBuildActionEntries =
+        barSchemeBuildAction.getBuildActionEntries();
+    assertThat(barSchemeBuildActionEntries, hasSize(1));
+    assertThat( // bar:libbar
+        barSchemeBuildActionEntries,
+        hasItem(
+            withNameAndBuildingFor("libbar", equalTo(XCScheme.BuildActionEntry.BuildFor.DEFAULT))));
+
+    XCScheme.TestAction barSchemeTestAction = barScheme.get().getTestAction().get();
+    assertThat(barSchemeTestAction.getTestables(), hasSize(0));
   }
 
   @Test
@@ -488,7 +555,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -538,7 +606,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -692,7 +761,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -815,7 +885,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -892,7 +963,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -922,6 +994,8 @@ public class WorkspaceAndProjectGeneratorTest {
             .setSrcTarget(Optional.of(fooLibTarget))
             .setExplicitRunnablePath(Optional.of("/some.app"))
             .setLaunchStyle(Optional.of(XCScheme.LaunchAction.LaunchStyle.WAIT))
+            .setWatchInterface(Optional.of(WatchInterface.COMPLICATION))
+            .setNotificationPayloadFile(Optional.of("SomeFile.apns"))
             .build();
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(fooLib, workspaceNode);
@@ -949,7 +1023,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -959,6 +1034,9 @@ public class WorkspaceAndProjectGeneratorTest {
     assertThat(launchAction.getRunnablePath().get(), Matchers.equalTo("/some.app"));
     assertThat(
         launchAction.getLaunchStyle(), Matchers.equalTo(XCScheme.LaunchAction.LaunchStyle.WAIT));
+    assertThat(
+        launchAction.getWatchInterface().get(), Matchers.equalTo(WatchInterface.COMPLICATION));
+    assertThat(launchAction.getNotificationPayloadFile().get(), Matchers.equalTo("SomeFile.apns"));
   }
 
   @Test
@@ -1010,7 +1088,8 @@ public class WorkspaceAndProjectGeneratorTest {
             halideBuckConfig,
             cxxBuckConfig,
             appleConfig,
-            swiftBuckConfig);
+            swiftBuckConfig,
+            Optional.empty());
     Map<Path, ProjectGenerator> projectGenerators = new HashMap<>();
     generator.generateWorkspaceAndDependentProjects(
         projectGenerators, MoreExecutors.newDirectExecutorService());
@@ -1051,6 +1130,20 @@ public class WorkspaceAndProjectGeneratorTest {
             return entry.getBuildFor();
           }
         });
+  }
+
+  private Matcher<XCScheme.TestableReference> testableReferenceWithName(String name) {
+    return new FeatureMatcher<XCScheme.TestableReference, String>(
+        equalTo(name), "TestableReference named", "name") {
+      @Override
+      protected String featureValueOf(XCScheme.TestableReference testableReference) {
+        return testableReference.getBuildableReference().blueprintName;
+      }
+    };
+  }
+
+  private Matcher<XCScheme.TestableReference> withName(String name) {
+    return testableReferenceWithName(name);
   }
 
   private Function<TargetNode<?>, ActionGraphBuilder> getActionGraphBuilderForNodeFunction(

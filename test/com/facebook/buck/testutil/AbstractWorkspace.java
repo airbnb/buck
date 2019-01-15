@@ -214,7 +214,7 @@ public abstract class AbstractWorkspace {
     }
   }
 
-  private void ensureNoLocalBuckConfig(Path templatePath) throws IOException {
+  private void ensureNoLocalBuckConfig(Path templatePath) {
     if (Files.exists(templatePath.resolve(".buckconfig.local"))) {
       throw new IllegalStateException(
           "Found a .buckconfig.local in the Workspace template, which is illegal."
@@ -556,6 +556,16 @@ public abstract class AbstractWorkspace {
    */
   public void copyRecursively(Path source, Path pathRelativeToWorkspaceRoot) throws IOException {
     MostFiles.copyRecursively(source, destPath.resolve(pathRelativeToWorkspaceRoot));
+  }
+
+  /**
+   * Deletes the directory (relative to workspace root)
+   *
+   * @param source source path of file relative to workspace root
+   * @throws IOException
+   */
+  public void deleteRecursivelyIfExists(String path) throws IOException {
+    MostFiles.deleteRecursivelyIfExists(getPath(path));
   }
 
   /**

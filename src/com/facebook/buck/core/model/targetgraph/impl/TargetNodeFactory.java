@@ -33,20 +33,41 @@ import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.parser.exceptions.NoSuchBuildTargetException;
 import com.facebook.buck.rules.coercer.CoercedTypeCache;
 import com.facebook.buck.rules.coercer.ParamInfo;
+import com.facebook.buck.rules.coercer.PathTypeCoercer.PathExistenceVerificationMode;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
 import com.facebook.buck.rules.visibility.VisibilityPattern;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.hash.HashCode;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
 public class TargetNodeFactory implements NodeCopier {
+
   private final TypeCoercerFactory typeCoercerFactory;
+  private final PathsChecker pathsChecker;
 
   public TargetNodeFactory(TypeCoercerFactory typeCoercerFactory) {
+    this(typeCoercerFactory, PathExistenceVerificationMode.VERIFY);
+  }
+
+  public TargetNodeFactory(
+      TypeCoercerFactory typeCoercerFactory,
+      PathExistenceVerificationMode pathExistenceVerificationMode) {
+    this(typeCoercerFactory, getPathsChecker(pathExistenceVerificationMode));
+  }
+
+  public TargetNodeFactory(TypeCoercerFactory typeCoercerFactory, PathsChecker pathsChecker) {
     this.typeCoercerFactory = typeCoercerFactory;
+    this.pathsChecker = pathsChecker;
+  }
+
+  private static PathsChecker getPathsChecker(
+      PathExistenceVerificationMode pathExistenceVerificationMode) {
+    if (pathExistenceVerificationMode == PathExistenceVerificationMode.VERIFY) {
+      return new MissingPathsChecker();
+    }
+    return new NoopPathsChecker();
   }
 
   /**
@@ -60,7 +81,6 @@ public class TargetNodeFactory implements NodeCopier {
    */
   @SuppressWarnings("unchecked")
   public <T, U extends BaseDescription<T>> TargetNode<T> createFromObject(
-      HashCode rawInputsHashCode,
       U description,
       Object constructorArg,
       ProjectFilesystem filesystem,
@@ -71,7 +91,6 @@ public class TargetNodeFactory implements NodeCopier {
       CellPathResolver cellRoots)
       throws NoSuchBuildTargetException {
     return create(
-        rawInputsHashCode,
         description,
         (T) constructorArg,
         filesystem,
@@ -84,7 +103,6 @@ public class TargetNodeFactory implements NodeCopier {
 
   @SuppressWarnings("unchecked")
   private <T, U extends BaseDescription<T>> TargetNode<T> create(
-      HashCode rawInputsHashCode,
       U description,
       T constructorArg,
       ProjectFilesystem filesystem,
@@ -132,6 +150,9 @@ public class TargetNodeFactory implements NodeCopier {
                   buildTarget.getUnflavoredBuildTarget(), constructorArg));
     }
 
+    ImmutableSet<Path> paths = pathsBuilder.build();
+    pathsChecker.checkPaths(filesystem, buildTarget, paths);
+
     // This method uses the TargetNodeFactory, rather than just calling withBuildTarget,
     // because
     // ImplicitDepsInferringDescriptions may give different results for deps based on flavors.
@@ -140,11 +161,10 @@ public class TargetNodeFactory implements NodeCopier {
     return ImmutableTargetNode.of(
         buildTarget,
         this,
-        rawInputsHashCode,
         description,
         constructorArg,
         filesystem,
-        pathsBuilder.build(),
+        paths,
         declaredDeps,
         extraDepsBuilder.build(),
         targetGraphOnlyDepsBuilder.build(),
@@ -194,7 +214,6 @@ public class TargetNodeFactory implements NodeCopier {
       TargetNode<?> originalNode, DescriptionWithTargetGraph<T> description) {
     try {
       return create(
-          originalNode.getRawInputsHashCode(),
           description,
           (T) originalNode.getConstructorArg(),
           originalNode.getFilesystem(),
@@ -217,7 +236,6 @@ public class TargetNodeFactory implements NodeCopier {
       TargetNode<T> originalNode, ImmutableSet<Flavor> flavors) {
     try {
       return create(
-          originalNode.getRawInputsHashCode(),
           originalNode.getDescription(),
           originalNode.getConstructorArg(),
           originalNode.getFilesystem(),

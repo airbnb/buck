@@ -46,7 +46,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class TargetPatternEvaluator {
+class TargetPatternEvaluator {
   private static final Logger LOG = Logger.get(TargetPatternEvaluator.class);
 
   private final Parser parser;
@@ -55,11 +55,16 @@ public class TargetPatternEvaluator {
   private final CommandLineTargetNodeSpecParser targetNodeSpecParser;
   private final BuckConfig buckConfig;
   private final Cell rootCell;
+  private final boolean excludeUnsupportedTargets;
 
   private Map<String, ImmutableSet<QueryTarget>> resolvedTargets = new HashMap<>();
 
   public TargetPatternEvaluator(
-      Cell rootCell, BuckConfig buckConfig, Parser parser, boolean enableProfiling) {
+      Cell rootCell,
+      BuckConfig buckConfig,
+      Parser parser,
+      boolean enableProfiling,
+      boolean excludeUnsupportedTargets) {
     this.rootCell = rootCell;
     this.parser = parser;
     this.enableProfiling = enableProfiling;
@@ -67,10 +72,11 @@ public class TargetPatternEvaluator {
     this.projectRoot = rootCell.getFilesystem().getRootPath();
     this.targetNodeSpecParser =
         new CommandLineTargetNodeSpecParser(buckConfig, new BuildTargetPatternTargetNodeParser());
+    this.excludeUnsupportedTargets = excludeUnsupportedTargets;
   }
 
   /** Attempts to parse and load the given collection of patterns. */
-  public void preloadTargetPatterns(Iterable<String> patterns, ListeningExecutorService executor)
+  void preloadTargetPatterns(Iterable<String> patterns, ListeningExecutorService executor)
       throws InterruptedException, BuildFileParseException, IOException {
     resolveTargetPatterns(patterns, executor);
   }
@@ -120,7 +126,7 @@ public class TargetPatternEvaluator {
     return resolved.build();
   }
 
-  ImmutableSet<QueryTarget> resolveFilePattern(String pattern) throws IOException {
+  private ImmutableSet<QueryTarget> resolveFilePattern(String pattern) throws IOException {
     ImmutableSet<Path> filePaths =
         PathArguments.getCanonicalFilesUnderProjectRoot(projectRoot, ImmutableList.of(pattern))
             .relativePathsUnderProjectRoot;
@@ -132,7 +138,7 @@ public class TargetPatternEvaluator {
         .collect(ImmutableSortedSet.toImmutableSortedSet(Ordering.natural()));
   }
 
-  ImmutableMap<String, ImmutableSet<QueryTarget>> resolveBuildTargetPatterns(
+  private ImmutableMap<String, ImmutableSet<QueryTarget>> resolveBuildTargetPatterns(
       List<String> patterns, ListeningExecutorService executor)
       throws InterruptedException, BuildFileParseException, IOException {
 
@@ -151,7 +157,8 @@ public class TargetPatternEvaluator {
             SpeculativeParsing.DISABLED,
             // We disable mapping //path/to:lib to //path/to:lib#default,static
             // because the query engine doesn't handle flavors very well.
-            ParserConfig.ApplyDefaultFlavorsMode.DISABLED);
+            ParserConfig.ApplyDefaultFlavorsMode.DISABLED,
+            excludeUnsupportedTargets);
     LOG.verbose("Resolved target patterns %s -> targets %s", patterns, buildTargets);
 
     // Convert the ordered result into a result map of pattern to set of resolved targets.

@@ -32,6 +32,7 @@ public class BuckTargetPatternTest {
 
   // Helpers here...
 
+  @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
   private static <T> void assertOptionalEquals(@Nullable T expected, Optional<T> optionalActual) {
     assertEquals(expected, optionalActual.orElse(null));
   }
@@ -351,7 +352,7 @@ public class BuckTargetPatternTest {
   // Tests for #resolve(Pattern)
 
   @Test
-  public void resolveWhenOtherIsFullyQualified() {
+  public void resolvePatternWhenOtherIsFullyQualified() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("foo//bar/baz:qux");
     BuckTargetPattern resolved = base.resolve(other);
@@ -359,7 +360,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherIsFullyQualifiedWithImpliedTarget() {
+  public void resolvePatternWhenOtherIsFullyQualifiedWithImpliedTarget() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("foo//bar/baz");
     BuckTargetPattern resolved = base.resolve(other);
@@ -367,7 +368,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherIsFullyQualifiedWithAllTargetsInPackageSuffix() {
+  public void resolvePatternWhenOtherIsFullyQualifiedWithAllTargetsInPackageSuffix() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("foo//bar/baz:");
     BuckTargetPattern resolved = base.resolve(other);
@@ -375,7 +376,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherIsFullyQualifiedWithRecursiveTargetsSuffix() {
+  public void resolvePatternWhenOtherIsFullyQualifiedWithRecursiveTargetsSuffix() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("foo//bar/baz/...");
     BuckTargetPattern resolved = base.resolve(other);
@@ -383,7 +384,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCell() {
+  public void resolvePatternWhenOtherHasNoCell() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("//bar/baz:qux");
     BuckTargetPattern resolved = base.resolve(other);
@@ -391,7 +392,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCellWithImpliedTarget() {
+  public void resolvePatternWhenOtherHasNoCellWithImpliedTarget() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("//bar/baz");
     BuckTargetPattern resolved = base.resolve(other);
@@ -399,7 +400,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCellWithAllTargetsInPackageSuffix() {
+  public void resolvePatternWhenOtherHasNoCellWithAllTargetsInPackageSuffix() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("//bar/baz:");
     BuckTargetPattern resolved = base.resolve(other);
@@ -407,7 +408,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCellWithRecursiveTargetsSuffix() {
+  public void resolvePatternWhenOtherHasNoCellWithRecursiveTargetsSuffix() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse("//bar/baz/...");
     BuckTargetPattern resolved = base.resolve(other);
@@ -415,7 +416,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCellAndNoPath() {
+  public void resolvePatternWhenOtherHasNoCellAndNoPath() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse(":qux");
     BuckTargetPattern resolved = base.resolve(other);
@@ -423,7 +424,7 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveWhenOtherHasNoCellAndNoPathWithAllTargetsInPackageSuffix() {
+  public void resolvePatternWhenOtherHasNoCellAndNoPathWithAllTargetsInPackageSuffix() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     BuckTargetPattern other = assertCanParse(":");
     BuckTargetPattern resolved = base.resolve(other);
@@ -431,9 +432,34 @@ public class BuckTargetPatternTest {
   }
 
   @Test
-  public void resolveReturnsNullWhenOtherIsNotATarget() {
+  public void resolvePatternReturnsNullWhenOtherIsNotATarget() {
     BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
     assertOptionalEquals(null, base.resolve("not-a-target"));
+  }
+
+  // Tests for #resolve(Target)
+
+  @Test
+  public void resolveTargetWhenTargetIsFullyQualified() {
+    BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
+    BuckTarget other = BuckTarget.parse("foo//bar:baz").get();
+    assertEquals(other, base.resolve(other));
+  }
+
+  @Test
+  public void resolveTargetWhenTargetHasNoCellNme() {
+    BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
+    BuckTarget other = BuckTarget.parse("//bar:baz").get();
+    BuckTarget expected = BuckTarget.parse("cell//bar:baz").get();
+    assertEquals(expected, base.resolve(other));
+  }
+
+  @Test
+  public void resolveTargetWhenTargetHasNoPath() {
+    BuckTargetPattern base = assertCanParse("cell//path/to/module:rule");
+    BuckTarget other = BuckTarget.parse(":baz").get();
+    BuckTarget expected = BuckTarget.parse("cell//path/to/module:baz").get();
+    assertEquals(expected, base.resolve(other));
   }
 
   // Tests for #relativize(Pattern)
@@ -578,12 +604,13 @@ public class BuckTargetPatternTest {
     assertEquals(":qux", resolved.toString());
   }
 
-  // Tests for #matches(Pattern)
+  // Tests for #matches(Pattern) and #matches(Target)
 
   private void checkMatches(String patternString, String otherString, boolean expected) {
     BuckTargetPattern pattern = assertCanParse(patternString);
     BuckTargetPattern other = assertCanParse(otherString);
     assertEquals(expected, pattern.matches(other));
+    other.asBuckTarget().ifPresent(t -> assertEquals(expected, pattern.matches(t)));
   }
 
   @Test
@@ -653,5 +680,105 @@ public class BuckTargetPatternTest {
       equalsTester.addEqualityGroup(one, two);
     }
     equalsTester.testEquals();
+  }
+
+  @Test
+  public void forCellName() {
+    assertEquals(assertCanParse("//..."), BuckTargetPattern.forCellName(null));
+    assertEquals(assertCanParse("foo//..."), BuckTargetPattern.forCellName("foo"));
+  }
+
+  @Test
+  public void asPackageMatchingPatternForFullyQualified() {
+    BuckTargetPattern base = assertCanParse("cell//foo:bar");
+    assertEquals(assertCanParse("cell//foo:"), base.asPackageMatchingPattern());
+  }
+
+  @Test
+  public void asPackageMatchingPatternInDefaultCell() {
+    BuckTargetPattern base = assertCanParse("//foo:bar");
+    assertEquals(assertCanParse("//foo:"), base.asPackageMatchingPattern());
+  }
+
+  @Test
+  public void asRecursivePackageMatchingPatternForFullyQualified() {
+    BuckTargetPattern base = assertCanParse("cell//foo:bar");
+    assertEquals(assertCanParse("cell//foo/..."), base.asRecursivePackageMatchingPattern());
+  }
+
+  @Test
+  public void asRecursivePackageMatchingPatternInDefaultCell() {
+    BuckTargetPattern base = assertCanParse("//foo:bar");
+    assertEquals(assertCanParse("//foo/..."), base.asRecursivePackageMatchingPattern());
+  }
+
+  @Test
+  public void flattenFullyQualified() {
+    BuckTargetPattern original = assertCanParse("foo//bar:baz/qux");
+    BuckTargetPattern expected = assertCanParse("foo//bar/baz:qux");
+    assertOptionalEquals(expected, original.flatten());
+  }
+
+  @Test
+  public void flattenWithNoCell() {
+    BuckTargetPattern original = assertCanParse("//bar:baz/qux");
+    BuckTargetPattern expected = assertCanParse("//bar/baz:qux");
+    assertOptionalEquals(expected, original.flatten());
+  }
+
+  @Test
+  public void flattenWithEmptyPath() {
+    BuckTargetPattern original = assertCanParse("//:bar/baz/qux");
+    BuckTargetPattern expected = assertCanParse("//bar/baz:qux");
+    assertOptionalEquals(expected, original.flatten());
+  }
+
+  @Test
+  public void flattenPreservesTrailingSlash() {
+    BuckTargetPattern original = assertCanParse("foo//bar:baz/qux/");
+    BuckTargetPattern expected = assertCanParse("foo//bar/baz:qux/");
+    assertOptionalEquals(expected, original.flatten());
+  }
+
+  @Test
+  public void cannotFlattenRelativeTarget() {
+    BuckTargetPattern original = assertCanParse(":foo/bar");
+    assertOptionalEquals(null, original.flatten());
+  }
+
+  @Test
+  public void whenFlatteningMakesNoChange() {
+    String[] patternStrings = {
+      ":foo",
+      "//:foo",
+      "//foo:bar",
+      "//foo/bar:baz",
+      "foo//:bar",
+      "foo//bar:baz",
+      "foo//bar/baz:qux",
+    };
+    for (String patternString : patternStrings) {
+      BuckTargetPattern original = assertCanParse(patternString);
+      assertOptionalEquals(original, original.flatten());
+
+      // For patterns that aren't targets, flattening never changes them
+      BuckTargetPattern packageMatching = original.asPackageMatchingPattern();
+      assertOptionalEquals(packageMatching, packageMatching.flatten());
+
+      BuckTargetPattern recursive = original.asRecursivePackageMatchingPattern();
+      assertOptionalEquals(recursive, recursive.flatten());
+    }
+  }
+
+  @Test
+  public void toleratesWeirdCasesWithoutCrashing() {
+    assertOptionalEquals(null, BuckTargetPattern.parse(""));
+    assertOptionalEquals(null, BuckTargetPattern.parse(" "));
+    assertOptionalEquals(null, BuckTargetPattern.parse("word"));
+    assertOptionalEquals(null, BuckTargetPattern.parse("path/only"));
+    assertOptionalEquals(null, BuckTargetPattern.parse("/bin:/usr/bin"));
+    assertOptionalEquals(null, BuckTargetPattern.parse("no // spaces : allowed"));
+    assertOptionalEquals(null, BuckTargetPattern.parse("'apos//target:here'"));
+    assertOptionalEquals(null, BuckTargetPattern.parse("\"quot//target:here\""));
   }
 }

@@ -50,8 +50,8 @@
 
   <property name="eclipse.dir" value="${basedir}/third-party/java/eclipse" />
 
-  <property name="immutables-builder-standalone.jar" value="${third-party.dir}/java/immutables/builder-2.5.7-SNAPSHOT.jar" />
-  <property name="immutables-value-standalone.jar" value="${third-party.dir}/java/immutables/value-2.5.7-SNAPSHOT.jar" />
+  <property name="immutables-builder-standalone.jar" value="${third-party.dir}/java/immutables/builder-2.7.3.jar" />
+  <property name="immutables-value-standalone.jar" value="${third-party.dir}/java/immutables/value-2.7.3.jar" />
   <property name="pf4j-standalone.jar" value="${third-party.dir}/java/pf4j/pf4j-2.0.0-SNAPSHOT.jar" />
   <property name="pf4j-annotation-processor-storage-config" value="-Apf4j.storageClassName=org.pf4j.processor.ServiceProviderExtensionStorage" />
 
@@ -81,7 +81,7 @@
   <property name="modules.resources.dir.name" value="buck-modules-resources" />
 
   <property name="ecj.compiler" value="org.eclipse.jdt.core.JDTCompilerAdapter" />
-  <property name="ecj.compiler.path" value="${eclipse.dir}/ecj-4.8.jar" />
+  <property name="ecj.compiler.path" value="${eclipse.dir}/ecj-4.10.jar" />
   <property name="error.prone.compiler" value="com.google.errorprone.ErrorProneAntCompilerAdapter" />
   <property name="error.prone.compiler.path" value="${third-party.dir}/java/errorprone/error_prone_ant-2.2.0.jar" />
   <!-- Control whether ErrorProne compiler is enabled. Disabled by default. -->
@@ -93,15 +93,18 @@
     else="${ecj.compiler.path}">
     <istrue value="${error.prone}" />
   </condition>
+  <condition property="jdk11_or_higher">
+    <hasmethod classname="java.lang.String" method="stripTrailing"/>
+  </condition>
 
   <!-- Javadoc in 1.8 became stricter about parsing the docs. This disables some of those checks -->
-  <available property="jdk1.8" classname="java.util.stream.Stream"/>
+  <available property="jdk8_or_higher" classname="java.util.stream.Stream"/>
   <condition
           property="javadoc.doclint"
           value="-Xdoclint:-reference"
           else="">
     <and>
-      <isset property="jdk1.8"/>
+      <isset property="jdk8_or_higher"/>
     </and>
   </condition>
 
@@ -109,14 +112,14 @@
     <include name="args4j/args4j-2.0.30.jar" />
     <include name="android/ddmlib-25.3.0.jar" />
     <include name="diffutils/diffutils-1.3.0.jar" />
-    <include name="ini4j/ini4j-0.5.2.jar" />
-    <include name="jackson/jackson-annotations-2.7.8.jar" />
-    <include name="jackson/jackson-core-2.7.8.jar" />
-    <include name="jackson/jackson-databind-2.7.8.jar" />
-    <include name="jackson/jackson-datatype-jdk8-2.7.8.jar" />
-    <include name="jackson/jackson-datatype-guava-2.7.8.jar" />
+    <include name="ini4j/ini4j-0.5.5-SNAPSHOT.jar" />
+    <include name="jackson/jackson-annotations-2.9.7.jar" />
+    <include name="jackson/jackson-core-2.9.7.jar" />
+    <include name="jackson/jackson-databind-2.9.7.jar" />
+    <include name="jackson/jackson-datatype-jdk8-2.9.7.jar" />
+    <include name="jackson/jackson-datatype-guava-2.9.7.jar" />
     <include name="android/sdklib-25.3.0.jar" />
-    <include name="nailgun/nailgun-server-1.0.0-SNAPSHOT.jar" />
+    <include name="nailgun/nailgun-server-1.0.0.jar" />
     <include name="jna/jna-4.5.1.jar" />
     <include name="jna/jna-platform-4.5.1.jar" />
     <include name="sqlite/sqlite-jdbc-3.20.0.jar" />
@@ -131,7 +134,7 @@
     <include name="android/sdk-common-25.3.0.jar" />
     <include name="aopalliance/aopalliance.jar" />
     <include name="aosp/apksig.jar" />
-    <include name="asm/asm*-6.2.1.jar" />
+    <include name="asm/asm*-7.0.jar" />
     <include name="bazel/bazel_deploy.jar" />
     <include name="bundletool/bundle.jar" />
     <include name="closure-templates/soy-excluding-deps.jar" />
@@ -157,20 +160,23 @@
     <include name="grpc/grpc-context-1.11.0.jar" />
     <include name="grpc/grpc-core-1.10.1.jar" />
     <include name="grpc/grpc-netty-1.10.1.jar" />
+    <include name="grpc/grpc-netty-shaded-1.10.1.jar" />
     <include name="grpc/grpc-protobuf-1.10.1.jar" />
     <include name="grpc/grpc-protobuf-lite-1.11.0.jar" />
     <include name="grpc/grpc-stub-1.10.1.jar" />
     <include name="netty/netty-all-4.1.24.Final.jar" />
+    <include name="netty-handler/netty-handler-4.0.17.Final.jar" />
+    <include name="netty-tcnative/netty-tcnative-boringssl-static-2.0.7.Final.jar" />
     <include name="gson/gson-2.8.2.jar" />
     <include name="guice/guice-3.0.jar" />
     <include name="guice/guice-assistedinject-3.0.jar" />
     <include name="guice/guice-multibindings-3.0.jar" />
     <include name="icu4j/icu4j-54.1.1.jar" />
-    <include name="immutables/builder-2.5.7-SNAPSHOT.jar" />
-    <include name="immutables/value-2.5.7-SNAPSHOT.jar" />
+    <include name="immutables/builder-2.7.3.jar" />
+    <include name="immutables/value-2.7.3.jar" />
     <include name="infer-annotations/infer-annotations-4.2.jar" />
-    <include name="jacoco/org.jacoco.core-0.8.2.jar" />
-    <include name="jacoco/org.jacoco.report-0.8.2.jar" />
+    <include name="jacoco/org.jacoco.core-0.8.3.201812281252.jar" />
+    <include name="jacoco/org.jacoco.report-0.8.3.201812281252.jar" />
     <include name="jdom/jdom-2.0.6.jar" />
     <include name="jetty/jetty-all-9.4.9.v20180320-uber.jar" />
     <include name="jimfs/jimfs-1.1.jar" />
@@ -217,10 +223,15 @@
     <include name="slf4j/jcl-over-slf4j-1.6.2.jar" />
     <include name="slf4j/slf4j-api-1.7.5.jar" />
   </fileset>
+  
+  <path id="provided.jars">
+
+  </path>
 
   <path id="classpath-no-src-no-aosp">
     <fileset refid="buck.jars" />
     <fileset refid="third-party.jars" />
+    <path refid="provided.jars" />
     <pathelement location="${classes.dir}" />
     <pathelement location="${dx.classes.dir}" />
     <pathelement location="${bootstrapper.jar}" />
@@ -337,6 +348,7 @@
     <compiler destdir="${bootstrapper.classes.dir}" classpathref="bootstrapper-classpath">
       <javac-params>
         <include name="${bootstrapper.src.dir}/**/*.java" />
+        <include name="com/facebook/buck/util/JavaVersion.java" />
         <include name="com/facebook/buck/util/liteinfersupport/Nullable.java" />
         <include name="com/facebook/buck/util/liteinfersupport/PropagatesNullable.java" />
         <include name="com/facebook/buck/jvm/java/plugin/api/*.java" />
@@ -390,7 +402,12 @@
         <include name="com/facebook/buck/util/liteinfersupport/Nullable.java" />
         <include name="com/facebook/buck/util/liteinfersupport/PropagatesNullable.java" />
         <include name="com/facebook/buck/jvm/java/abi/source/*.java" />
+        <include name="com/facebook/buck/jvm/java/abi/source/java8/*.java" />
+        <include name="com/facebook/buck/jvm/java/abi/source/java11/*.java" />
         <include name="com/facebook/buck/jvm/java/plugin/adapter/**/*.java" />
+        <!-- Conditional compilation so we can simultaneously build against Java 8 and 11. -->
+        <exclude name="com/facebook/buck/**/java8/*.java" if="jdk11_or_higher"/>
+        <exclude name="com/facebook/buck/**/java11/*.java" unless="jdk11_or_higher"/>
       </javac-params>
     </compiler>
     <jar destfile="${javac-plugin.jar}">
@@ -461,7 +478,7 @@
         <compilerarg value="-Xlint:unchecked" />
         <compilerarg value="-time" compiler="${ecj.compiler}" />
         <compilerclasspath>
-          <pathelement location="${buck.build.compiler.jar.path}" />
+            <pathelement location="${buck.build.compiler.jar.path}" />
         </compilerclasspath>
         <compilerarg value="-s" />
         <compilerarg value="@{gensrcdir}" />
@@ -517,6 +534,10 @@
           <exclude name="com/facebook/buck/jvm/java/lang/model/**" />
           <exclude name="com/facebook/buck/jvm/java/plugin/adapter/**" />
           <exclude name="com/facebook/buck/testrunner/**" />
+
+          <!-- Conditional compilation so we can simultaneously build against Java 8 and 11. -->
+          <exclude name="com/facebook/buck/jvm/java/abi/java8/**" if="jdk11_or_higher"/>
+          <exclude name="com/facebook/buck/jvm/java/abi/java11/**" unless="jdk11_or_higher"/>
         </patternset>
       </javac-params>
     </compiler>
@@ -810,15 +831,14 @@
 
   <target name="report-generator-jar" depends="compile">
     <jar destfile="${build.dir}/report-generator.jar">
-      <zipfileset excludes="**/*SF **/*RSA" src="${third-party.dir}/java/jacoco/org.jacoco.core-0.8.2.jar"/>
-      <zipfileset excludes="**/*SF **/*RSA" src="${third-party.dir}/java/jacoco/org.jacoco.report-0.8.2.jar"/>
+      <zipfileset excludes="**/*SF **/*RSA" src="${third-party.dir}/java/jacoco/org.jacoco.core-0.8.3.201812281252.jar"/>
+      <zipfileset excludes="**/*SF **/*RSA" src="${third-party.dir}/java/jacoco/org.jacoco.report-0.8.3.201812281252.jar"/>
       <zipfileset excludes="**/*SF **/*RSA" src="${third-party.dir}/java/plexus/plexus-utils-3.0.20.jar"/>
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-6.2.1.jar" />
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-analysis-6.2.1.jar" />
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-commons-6.2.1.jar" />
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-tree-6.2.1.jar" />
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-util-6.2.1.jar" />
-      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-xml-6.2.1.jar" />
+      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-7.0.jar" />
+      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-analysis-7.0.jar" />
+      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-commons-7.0.jar" />
+      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-tree-7.0.jar" />
+      <zipfileset includes="**/*.class" src="${third-party.dir}/java/asm/asm-util-7.0.jar" />
       <zipfileset includes="**/*.class" src="${third-party.dir}/java/guava/guava-23.3-jre.jar"/>
       <fileset dir="${classes.dir}">
           <include name="com/facebook/buck/jvm/java/coverage/ReportGenerator.class"/>
@@ -1003,7 +1023,7 @@
         gensrcdir="@{module-gen-dir}">
         <javac-params>
           <compilerarg value="-processorpath" />
-          <compilerarg value="${module.processorpath}" />
+          <compilerarg value="${module.processorpath}" /> 
           <compilerarg value="${pf4j-annotation-processor-storage-config}" />
           <module-javac-params/>
         </javac-params>
@@ -1066,6 +1086,9 @@
         <fileset dir="${src.dir}">
           <include name="**/*.java" />
           <exclude name="com/facebook/buck/android/support/exopackage/**" />
+          <!-- Conditional compilation so we can simultaneously build against Java 8 and 11. -->
+          <exclude name="com/facebook/buck/**/java8/*.java" if="jdk11_or_higher"/>
+          <exclude name="com/facebook/buck/**/java11/*.java" unless="jdk11_or_higher"/>
         </fileset>
         <fileset dir="${gensrc.dir}" />
         <fileset dir="${buck.modules.classes.dir}/gen/" />
@@ -1167,3 +1190,4 @@
   <target name="pre-checkin" depends="clean, default, lint"/>
   <target name="all" depends="default, javadoc" />
 </project>
+

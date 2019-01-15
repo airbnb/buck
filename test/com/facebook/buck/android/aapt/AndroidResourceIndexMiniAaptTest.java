@@ -32,6 +32,7 @@ import com.facebook.buck.core.sourcepath.resolver.SourcePathResolver;
 import com.facebook.buck.core.sourcepath.resolver.impl.DefaultSourcePathResolver;
 import com.facebook.buck.event.DefaultBuckEventBus;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystemView;
 import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
@@ -62,7 +63,7 @@ public class AndroidResourceIndexMiniAaptTest {
   private MiniAapt aapt;
 
   @Before
-  public void setUp() throws InterruptedException, IOException {
+  public void setUp() throws IOException {
     workspace =
         TestDataHelper.createProjectWorkspaceForScenario(this, "android_project", tmpFolder);
     workspace.setUp();
@@ -75,7 +76,6 @@ public class AndroidResourceIndexMiniAaptTest {
             FakeSourcePath.of(filesystem, "res"),
             Paths.get("android_resources.json"),
             ImmutableSet.of(),
-            false,
             false,
             MiniAapt.ResourceCollectionType.ANDROID_RESOURCE_INDEX);
   }
@@ -260,6 +260,8 @@ public class AndroidResourceIndexMiniAaptTest {
 
   @Test
   public void testProcessFileNamesInDirectory() throws IOException, ResourceParseException {
+    ProjectFilesystemView filesystemView = filesystem.asView();
+
     filesystem.createParentDirs("sample_res/values/value.xml~");
     filesystem.touch(Paths.get("sample_res/values/value.xml~"));
     filesystem.writeContentsToPath(
@@ -268,11 +270,11 @@ public class AndroidResourceIndexMiniAaptTest {
             + "<bool name=\"v\">false</bool>"
             + "</resources>",
         Paths.get("sample_res/values/value.xml~"));
-    aapt.processFileNamesInDirectory(filesystem, Paths.get("sample_res/drawable"));
-    aapt.processFileNamesInDirectory(filesystem, Paths.get("sample_res/drawable-ldpi"));
-    aapt.processFileNamesInDirectory(filesystem, Paths.get("sample_res/transition-v19"));
+    aapt.processFileNamesInDirectory(filesystemView, Paths.get("sample_res/drawable"));
+    aapt.processFileNamesInDirectory(filesystemView, Paths.get("sample_res/drawable-ldpi"));
+    aapt.processFileNamesInDirectory(filesystemView, Paths.get("sample_res/transition-v19"));
     aapt.processValues(
-        filesystem,
+        filesystemView,
         new DefaultBuckEventBus(FakeClock.doNotCare(), new BuildId("")),
         Paths.get("sample_res/values"));
 

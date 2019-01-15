@@ -72,36 +72,45 @@ import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.io.watchman.WatchmanFactory;
 import com.facebook.buck.io.watchman.WatchmanOverflowEvent;
 import com.facebook.buck.io.watchman.WatchmanPathEvent;
+import com.facebook.buck.json.JsonObjectHashing;
 import com.facebook.buck.jvm.core.JavaLibrary;
+import com.facebook.buck.manifestservice.ManifestService;
 import com.facebook.buck.parser.events.ParseBuckFileEvent;
 import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.parser.exceptions.MissingBuildFileException;
-import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
+import com.facebook.buck.rules.coercer.DefaultConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
 import com.facebook.buck.rules.keys.config.TestRuleKeyConfigurationFactory;
 import com.facebook.buck.shell.GenruleDescriptionArg;
+import com.facebook.buck.testutil.FakeFileHashCache;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.TestConsole;
 import com.facebook.buck.testutil.integration.TestDataHelper;
 import com.facebook.buck.util.CreateSymlinksForTests;
 import com.facebook.buck.util.DefaultProcessExecutor;
 import com.facebook.buck.util.ProcessExecutor;
+import com.facebook.buck.util.ThrowingCloseableMemoizedSupplier;
 import com.facebook.buck.util.config.ConfigBuilder;
+import com.facebook.buck.util.environment.EnvVariablesProvider;
 import com.facebook.buck.util.environment.Platform;
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.hash.HashCode;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -110,6 +119,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -151,6 +161,11 @@ public class DefaultParserTest {
   private ListeningExecutorService executorService;
   private ExecutableFinder executableFinder;
 
+  private static ThrowingCloseableMemoizedSupplier<ManifestService, IOException>
+      getManifestSupplier() {
+    return ThrowingCloseableMemoizedSupplier.of(() -> null, ManifestService::close);
+  }
+
   public DefaultParserTest(int threads, boolean parallelParsing) {
     this.threads = threads;
     this.parallelParsing = parallelParsing;
@@ -173,8 +188,7 @@ public class DefaultParserTest {
   }
 
   /** Helper to construct a PerBuildState and use it to get nodes. */
-  @VisibleForTesting
-  private static ImmutableList<Map<String, Object>> getRawTargetNodes(
+  private static void getRawTargetNodes(
       Parser parser,
       TypeCoercerFactory typeCoercerFactory,
       BuckEventBus eventBus,
@@ -188,12 +202,15 @@ public class DefaultParserTest {
     try (PerBuildState state =
         PerBuildStateFactory.createFactory(
                 typeCoercerFactory,
-                new ConstructorArgMarshaller(typeCoercerFactory),
+                new DefaultConstructorArgMarshaller(typeCoercerFactory),
                 knownRuleTypesProvider,
                 new ParserPythonInterpreterProvider(cell.getBuckConfig(), executableFinder),
                 cell.getBuckConfig(),
                 WatchmanFactory.NULL_WATCHMAN,
-                eventBus)
+                eventBus,
+                getManifestSupplier(),
+                new FakeFileHashCache(
+                    ImmutableMap.of(buildFile, HashCode.fromBytes(new byte[] {1}))))
             .create(
                 parser.getPermState(),
                 executor,
@@ -201,13 +218,12 @@ public class DefaultParserTest {
                 ImmutableList.of(),
                 enableProfiling,
                 SpeculativeParsing.DISABLED)) {
-      return ImmutableList.copyOf(
-          DefaultParser.getTargetNodeRawAttributes(state, cell, buildFile).getTargets().values());
+      DefaultParser.getTargetNodeRawAttributes(state, cell, buildFile).getTargets();
     }
   }
 
   @Before
-  public void setUp() throws IOException, InterruptedException {
+  public void setUp() throws IOException {
     tempDir.newFolder("java", "com", "facebook");
 
     defaultIncludeFile = tempDir.newFile("java/com/facebook/defaultIncludeFile").toRealPath();
@@ -617,7 +633,11 @@ public class DefaultParserTest {
         FakeBuckConfig.builder()
             .setFilesystem(filesystem)
             .setEnvironment(
-                ImmutableMap.of("Some Key", "Some Value", "PATH", System.getenv("PATH")))
+                ImmutableMap.of(
+                    "Some Key",
+                    "Some Value",
+                    "PATH",
+                    EnvVariablesProvider.getSystemEnv().get("PATH")))
             .build();
 
     Cell cell = new TestCellBuilder().setFilesystem(filesystem).setBuckConfig(config).build();
@@ -634,7 +654,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfBuildFileAddThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -674,7 +694,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfBuildFileChangeThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -713,7 +733,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfBuildFileDeleteThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -752,7 +772,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfIncludeFileAddThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -791,7 +811,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfIncludeFileChangeThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -832,7 +852,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfIncludeFileDeleteThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -871,7 +891,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOf2ndOrderIncludeFileAddThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -910,7 +930,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOf2ndOrderIncludeFileChangeThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -949,7 +969,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOf2ndOrderIncludeFileDeleteThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -988,7 +1008,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfDefaultIncludeFileAddThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1027,7 +1047,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfDefaultIncludeFileChangeThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1066,7 +1086,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfDefaultIncludeFileDeleteThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, IOException, InterruptedException {
+      throws BuildFileParseException, IOException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1106,7 +1126,7 @@ public class DefaultParserTest {
   @Test
   // TODO(simons): avoid invalidation when arbitrary contained (possibly backup) files are added.
   public void whenNotifiedOfContainedFileAddThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1198,7 +1218,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfContainedFileChangeThenCacheRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1238,7 +1258,7 @@ public class DefaultParserTest {
   @Test
   // TODO(simons): avoid invalidation when arbitrary contained (possibly backup) files are deleted.
   public void whenNotifiedOfContainedFileDeleteThenCacheRulesAreInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1277,7 +1297,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfContainedTempFileAddThenCachedRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1316,7 +1336,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfContainedTempFileChangeThenCachedRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1355,7 +1375,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfContainedTempFileDeleteThenCachedRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1394,7 +1414,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfUnrelatedFileAddThenCacheRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1433,7 +1453,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfUnrelatedFileChangeThenCacheRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -1472,7 +1492,7 @@ public class DefaultParserTest {
 
   @Test
   public void whenNotifiedOfUnrelatedFileDeleteThenCacheRulesAreNotInvalidated()
-      throws BuildFileParseException, InterruptedException {
+      throws BuildFileParseException {
     // Call parseBuildFile to populate the cache.
     getRawTargetNodes(
         parser,
@@ -2058,13 +2078,14 @@ public class DefaultParserTest {
 
     ImmutableSet<BuildTarget> result =
         parser
-            .buildTargetGraphForTargetNodeSpecs(
+            .buildTargetGraphWithConfigurationTargets(
                 cell,
                 false,
                 executorService,
                 ImmutableList.of(
                     AbstractBuildTargetSpec.from(
                         BuildTargetFactory.newInstance(cellRoot, "//lib", "lib"))),
+                false,
                 ParserConfig.ApplyDefaultFlavorsMode.SINGLE)
             .getBuildTargets();
 
@@ -2104,13 +2125,14 @@ public class DefaultParserTest {
 
     ImmutableSet<BuildTarget> result =
         parser
-            .buildTargetGraphForTargetNodeSpecs(
+            .buildTargetGraphWithConfigurationTargets(
                 cell,
                 false,
                 executorService,
                 ImmutableList.of(
                     AbstractBuildTargetSpec.from(
                         BuildTargetFactory.newInstance(cellRoot, "//lib", "lib"))),
+                false,
                 ParserConfig.ApplyDefaultFlavorsMode.SINGLE)
             .getBuildTargets();
 
@@ -2154,13 +2176,14 @@ public class DefaultParserTest {
 
     ImmutableSet<BuildTarget> result =
         parser
-            .buildTargetGraphForTargetNodeSpecs(
+            .buildTargetGraphWithConfigurationTargets(
                 cell,
                 false,
                 executorService,
                 ImmutableList.of(
                     AbstractBuildTargetSpec.from(
                         BuildTargetFactory.newInstance(cellRoot, "//lib", "lib"))),
+                false,
                 ParserConfig.ApplyDefaultFlavorsMode.SINGLE)
             .getBuildTargets();
 
@@ -2195,12 +2218,13 @@ public class DefaultParserTest {
     EventListener eventListener = new EventListener();
     eventBus.register(eventListener);
 
-    parser.buildTargetGraphForTargetNodeSpecs(
+    parser.buildTargetGraphWithConfigurationTargets(
         cell,
         false,
         executorService,
         ImmutableList.of(
             AbstractBuildTargetSpec.from(BuildTargetFactory.newInstance(cellRoot, "//lib", "gen"))),
+        false,
         ParserConfig.ApplyDefaultFlavorsMode.DISABLED);
 
     // The read bytes are dependent on the serialization format of the parser, and the absolute path
@@ -2212,12 +2236,13 @@ public class DefaultParserTest {
 
     // The value should be cached, so no bytes are read when re-computing.
     events.clear();
-    parser.buildTargetGraphForTargetNodeSpecs(
+    parser.buildTargetGraphWithConfigurationTargets(
         cell,
         false,
         executorService,
         ImmutableList.of(
             AbstractBuildTargetSpec.from(BuildTargetFactory.newInstance(cellRoot, "//lib", "gen"))),
+        false,
         ParserConfig.ApplyDefaultFlavorsMode.DISABLED);
     assertEquals(0L, Iterables.getOnlyElement(events).getProcessedBytes());
   }
@@ -2284,7 +2309,7 @@ public class DefaultParserTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "value")
                     .build())
             .setFilesystem(filesystem)
@@ -2300,7 +2325,7 @@ public class DefaultParserTest {
             .setFilesystem(filesystem)
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "other value")
                     .build())
             .build();
@@ -2338,7 +2363,7 @@ public class DefaultParserTest {
             .setFilesystem(filesystem)
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "other value")
                     .build())
             .build();
@@ -2368,7 +2393,7 @@ public class DefaultParserTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "value")
                     .build())
             .setFilesystem(filesystem)
@@ -2406,7 +2431,7 @@ public class DefaultParserTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "value")
                     .put("BAR", "something")
                     .build())
@@ -2422,7 +2447,7 @@ public class DefaultParserTest {
         FakeBuckConfig.builder()
             .setEnvironment(
                 ImmutableMap.<String, String>builder()
-                    .putAll(System.getenv())
+                    .putAll(EnvVariablesProvider.getSystemEnv())
                     .put("FOO", "value")
                     .put("BAR", "something else")
                     .build())
@@ -2529,12 +2554,75 @@ public class DefaultParserTest {
     TargetGraph targetGraph =
         parser.buildTargetGraph(cell, false, executorService, buildTargetsList);
 
+    ImmutableMap<BuildTarget, Map<String, Object>> attributes =
+        getRawTargetNodes(
+            parser,
+            typeCoercerFactory,
+            eventBus,
+            cell,
+            knownRuleTypesProvider,
+            executorService,
+            executableFinder,
+            buildTargets);
+
     ImmutableMap.Builder<BuildTarget, HashCode> toReturn = ImmutableMap.builder();
     for (TargetNode<?> node : targetGraph.getNodes()) {
-      toReturn.put(node.getBuildTarget(), node.getRawInputsHashCode());
+      Hasher hasher = Hashing.sha1().newHasher();
+      JsonObjectHashing.hashJsonObject(hasher, attributes.get(node.getBuildTarget()));
+      toReturn.put(node.getBuildTarget(), hasher.hash());
     }
 
     return toReturn.build();
+  }
+
+  private static ImmutableMap<BuildTarget, Map<String, Object>> getRawTargetNodes(
+      Parser parser,
+      TypeCoercerFactory typeCoercerFactory,
+      BuckEventBus eventBus,
+      Cell cell,
+      KnownRuleTypesProvider knownRuleTypesProvider,
+      ListeningExecutorService executor,
+      ExecutableFinder executableFinder,
+      BuildTarget... buildTargets)
+      throws BuildFileParseException {
+    ImmutableMap.Builder<BuildTarget, Map<String, Object>> attributesByTarget =
+        ImmutableMap.builder();
+    List<BuildTarget> buildTargetList = Lists.newArrayList(buildTargets);
+    Map<Path, HashCode> hashes = new HashMap<>();
+    buildTargetList.forEach(
+        buildTarget ->
+            hashes.put(
+                buildTarget.getBasePath().resolve("BUCK"),
+                HashCode.fromBytes(buildTarget.getBaseName().getBytes(StandardCharsets.UTF_8))));
+
+    try (PerBuildState state =
+        PerBuildStateFactory.createFactory(
+                typeCoercerFactory,
+                new DefaultConstructorArgMarshaller(typeCoercerFactory),
+                knownRuleTypesProvider,
+                new ParserPythonInterpreterProvider(cell.getBuckConfig(), executableFinder),
+                cell.getBuckConfig(),
+                WatchmanFactory.NULL_WATCHMAN,
+                eventBus,
+                getManifestSupplier(),
+                new FakeFileHashCache(hashes))
+            .create(
+                parser.getPermState(),
+                executor,
+                cell,
+                ImmutableList.of(),
+                false,
+                SpeculativeParsing.DISABLED)) {
+      for (BuildTarget buildTarget : buildTargets) {
+        attributesByTarget.put(
+            buildTarget,
+            Preconditions.checkNotNull(
+                parser.getTargetNodeRawAttributes(
+                    state, cell, parser.getTargetNode(cell, false, executor, buildTarget))));
+      }
+
+      return attributesByTarget.build();
+    }
   }
 
   static class ParseEventStartedCounter {

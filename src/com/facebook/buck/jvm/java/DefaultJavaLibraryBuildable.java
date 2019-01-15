@@ -104,6 +104,10 @@ class DefaultJavaLibraryBuildable implements PipelinedBuildable<JavacPipelineSta
     return jarBuildStepsFactory.getResources();
   }
 
+  public Optional<String> getResourcesRoot() {
+    return jarBuildStepsFactory.getResourcesRoot();
+  }
+
   public ImmutableSortedSet<SourcePath> getCompileTimeClasspathSourcePaths() {
     return jarBuildStepsFactory.getCompileTimeClasspathSourcePaths();
   }
@@ -216,5 +220,9 @@ class DefaultJavaLibraryBuildable implements PipelinedBuildable<JavacPipelineSta
     public <E extends Exception> Optional<T> deserialize(ValueCreator<E> deserializer) {
       return Optional.empty();
     }
+  }
+
+  public boolean hasAnnotationProcessing() {
+    return jarBuildStepsFactory.hasAnnotationProcessing();
   }
 }

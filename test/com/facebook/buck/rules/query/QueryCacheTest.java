@@ -27,12 +27,12 @@ import com.facebook.buck.core.model.BuildTargetFactory;
 import com.facebook.buck.core.model.targetgraph.TargetGraph;
 import com.facebook.buck.core.model.targetgraph.TargetGraphFactory;
 import com.facebook.buck.core.model.targetgraph.TargetNode;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.core.rules.ActionGraphBuilder;
 import com.facebook.buck.core.rules.resolver.impl.TestActionGraphBuilder;
 import com.facebook.buck.io.filesystem.impl.FakeProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaBinaryRuleBuilder;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.query.QueryBuildTarget;
 import com.facebook.buck.query.QueryException;
 import com.facebook.buck.query.QueryExpression;
@@ -40,7 +40,6 @@ import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
 import com.google.common.collect.ImmutableSet;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 
@@ -49,7 +48,7 @@ public class QueryCacheTest {
   private static final TypeCoercerFactory TYPE_COERCER_FACTORY = new DefaultTypeCoercerFactory();
 
   @Test
-  public void cacheQueryResults() throws ExecutionException, QueryException {
+  public void cacheQueryResults() throws QueryException {
     Query q1 = Query.of("deps(:a) union deps(:c) except (deps(:a) intersect classpath(deps(:f)))");
     Query q2 = Query.of("deps(:a) ^ classpath(deps(:f))");
     Query q3 = Query.of("kind(binary, deps(:a))");
@@ -137,7 +136,7 @@ public class QueryCacheTest {
   }
 
   @Test
-  public void dynamicDeps() throws ExecutionException, QueryException {
+  public void dynamicDeps() throws QueryException {
     Query declared = Query.of("$declared_deps");
 
     BuildTarget fooTarget = BuildTargetFactory.newInstance("//:foo");

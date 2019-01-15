@@ -40,6 +40,10 @@ public class BuckParsingTest extends ParsingTestCase {
     doTest(true);
   }
 
+  public void testEmpty() {
+    doTest();
+  }
+
   public void testSimple1() {
     doTest();
   }
@@ -81,6 +85,14 @@ public class BuckParsingTest extends ParsingTestCase {
   }
 
   public void testTwoRules2() {
+    doTest();
+  }
+
+  public void testAssignment() {
+    doTest();
+  }
+
+  public void testExtensionFile() {
     doTest();
   }
 

@@ -18,8 +18,8 @@ package com.facebook.buck.rules.coercer;
 
 import com.facebook.buck.core.cell.CellPathResolver;
 import com.facebook.buck.core.model.BuildTarget;
+import com.facebook.buck.core.parser.buildtargetparser.BuildTargetPatternParser;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
-import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.query.QueryBuildTarget;
 import com.facebook.buck.query.QueryException;
 import com.facebook.buck.query.QueryExpression;
@@ -34,14 +34,18 @@ import java.util.stream.Stream;
 /** Coercer for {@link Query}s. */
 public class QueryCoercer implements TypeCoercer<Query> {
 
-  private static final TypeCoercerFactory TYPE_COERCER_FACTORY = new DefaultTypeCoercerFactory();
+  private final TypeCoercerFactory typeCoercerFactory;
+
+  public QueryCoercer(TypeCoercerFactory typeCoercerFactory) {
+    this.typeCoercerFactory = typeCoercerFactory;
+  }
 
   private Stream<BuildTarget> extractBuildTargets(CellPathResolver cellPathResolver, Query query) {
     GraphEnhancementQueryEnvironment env =
         new GraphEnhancementQueryEnvironment(
             Optional.empty(),
             Optional.empty(),
-            TYPE_COERCER_FACTORY,
+            typeCoercerFactory,
             cellPathResolver,
             query
                 .getBaseName()

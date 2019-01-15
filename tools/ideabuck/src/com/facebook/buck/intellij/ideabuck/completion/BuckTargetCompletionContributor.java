@@ -16,24 +16,29 @@
 
 package com.facebook.buck.intellij.ideabuck.completion;
 
-import com.facebook.buck.intellij.ideabuck.config.BuckCell;
-import com.facebook.buck.intellij.ideabuck.config.BuckProjectSettingsProvider;
+import com.facebook.buck.intellij.ideabuck.api.BuckCellManager;
+import com.facebook.buck.intellij.ideabuck.api.BuckCellManager.Cell;
+import com.facebook.buck.intellij.ideabuck.api.BuckTarget;
+import com.facebook.buck.intellij.ideabuck.api.BuckTargetLocator;
+import com.facebook.buck.intellij.ideabuck.api.BuckTargetPattern;
 import com.facebook.buck.intellij.ideabuck.file.BuckFileType;
 import com.facebook.buck.intellij.ideabuck.icons.BuckIcons;
+import com.facebook.buck.intellij.ideabuck.lang.psi.BuckLoadCall;
+import com.facebook.buck.intellij.ideabuck.lang.psi.BuckLoadTargetArgument;
 import com.facebook.buck.intellij.ideabuck.lang.psi.BuckPsiUtils;
 import com.facebook.buck.intellij.ideabuck.lang.psi.BuckTypes;
-import com.facebook.buck.intellij.ideabuck.util.BuckCellFinder;
 import com.intellij.codeInsight.completion.CompletionContributor;
 import com.intellij.codeInsight.completion.CompletionParameters;
 import com.intellij.codeInsight.completion.CompletionResultSet;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
-import com.intellij.icons.AllIcons.Nodes;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -71,16 +76,22 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     String prefix =
         positionStringWithQuotes.substring(
             quotes.length(), parameters.getOffset() - position.getTextOffset());
-    if (prefix.startsWith("@")) {
-      prefix = prefix.substring(1);
-    }
-    doCellNames(position, prefix, result);
     if (BuckPsiUtils.findAncestorWithType(position, BuckTypes.LOAD_TARGET_ARGUMENT) != null) {
       // Inside a load target, extension files are "@this//syntax/points:to/files.bzl"
+      if (prefix.startsWith("@")) {
+        prefix = prefix.substring(1);
+      }
+      doCellNames(position, prefix, result);
       doTargetsForRelativeExtensionFile(virtualFile, prefix, result);
       doPathsForFullyQualifiedExtensionFile(virtualFile, project, prefix, result);
       doTargetsForFullyQualifiedExtensionFile(virtualFile, project, prefix, result);
+    } else if (BuckPsiUtils.findAncestorWithType(position, BuckTypes.LOAD_ARGUMENT) != null) {
+      doSymbolsFromExtensionFile(virtualFile, project, position, prefix, result);
     } else {
+      if (prefix.startsWith("@")) {
+        prefix = prefix.substring(1);
+      }
+      doCellNames(position, prefix, result);
       doTargetsForRelativeBuckTarget(psiFile, prefix, result);
       doPathsForFullyQualifiedBuckTarget(virtualFile, project, prefix, result);
       doTargetsForFullyQualifiedBuckTarget(virtualFile, project, prefix, result);
@@ -92,12 +103,7 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
   }
 
   private void addResultForFile(CompletionResultSet result, VirtualFile file, String name) {
-    if (file.isDirectory()) {
-      result.addElement(LookupElementBuilder.create(name).withIcon(Nodes.Folder));
-    } else {
-      // TODO: get filetype for file
-      result.addElement(LookupElementBuilder.create(name).withIcon(BuckIcons.FILE_TYPE));
-    }
+    result.addElement(LookupElementBuilder.create(name).withIcon(file.getFileType().getIcon()));
   }
 
   private void doCellNames(PsiElement position, String prefix, CompletionResultSet result) {
@@ -105,13 +111,13 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
       return; // already beyond a cell name
     }
     Project project = position.getProject();
-    BuckProjectSettingsProvider buckProjectSettingsProvider =
-        BuckProjectSettingsProvider.getInstance(project);
-    for (String cellName : buckProjectSettingsProvider.getCellNames()) {
-      if (cellName.startsWith(prefix)) {
-        addResultForTarget(result, cellName + "//");
-      }
-    }
+    BuckCellManager.getInstance(project)
+        .getCells()
+        .forEach(
+            cell ->
+                cell.getName()
+                    .filter(name -> name.startsWith(prefix))
+                    .ifPresent(name -> addResultForTarget(result, name + "//")));
   }
 
   private static final Pattern RELATIVE_TARGET_TO_EXTENSION_FILE_PATTERN =
@@ -167,10 +173,12 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     }
     String cellName = matcher.group("cell");
     String cellPath = matcher.group("path");
-    String partial = matcher.group("partial");
-    BuckCellFinder buckCellFinder = BuckCellFinder.getInstance(project);
+    BuckTargetLocator buckTargetLocator = BuckTargetLocator.getInstance(project);
     VirtualFile targetDirectory =
-        buckCellFinder.resolveCellPath(sourceVirtualFile, cellName + "//" + cellPath).orElse(null);
+        BuckTargetPattern.parse(cellName + "//" + cellPath)
+            .flatMap(p -> buckTargetLocator.resolve(sourceVirtualFile, p))
+            .flatMap(buckTargetLocator::findVirtualFileForTargetPattern)
+            .orElse(null);
     if (targetDirectory == null) {
       return;
     }
@@ -180,6 +188,7 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     } else {
       partialPrefix = cellName + "//" + cellPath;
     }
+    String partial = matcher.group("partial");
     for (VirtualFile child : targetDirectory.getChildren()) {
       String name = child.getName();
       if (!name.startsWith(partial)) {
@@ -214,11 +223,11 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     String cellName = matcher.group("cell");
     String cellPath = matcher.group("path");
     String extPath = matcher.group("extpath");
-    String partial = matcher.group("partial");
-    BuckCellFinder buckCellFinder = BuckCellFinder.getInstance(project);
+    BuckTargetLocator buckTargetLocator = BuckTargetLocator.getInstance(project);
     VirtualFile targetDirectory =
-        buckCellFinder
-            .resolveCellPath(sourceVirtualFile, cellName + "//" + cellPath + "/" + extPath)
+        BuckTargetPattern.parse(cellName + "//" + cellPath + "/" + extPath)
+            .flatMap(p -> buckTargetLocator.resolve(sourceVirtualFile, p))
+            .flatMap(buckTargetLocator::findVirtualFileForTargetPattern)
             .orElse(null);
     if (targetDirectory == null) {
       return;
@@ -229,12 +238,39 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     } else {
       partialPrefix = cellName + "//" + cellPath + ":" + extPath;
     }
+    String partial = matcher.group("partial");
     for (VirtualFile child : targetDirectory.getChildren()) {
       String name = child.getName();
-      if (name.startsWith(partial) && name.endsWith(".bzl")) {
+      if (!child.isDirectory() && name.startsWith(partial) && name.endsWith(".bzl")) {
         addResultForFile(result, child, partialPrefix + name);
       }
     }
+  }
+
+  private void doSymbolsFromExtensionFile(
+      VirtualFile sourceFile,
+      Project project,
+      PsiElement position,
+      String prefix,
+      CompletionResultSet result) {
+    BuckTargetLocator buckTargetLocator = BuckTargetLocator.getInstance(project);
+    Optional.of(position)
+        .map(e -> PsiTreeUtil.getParentOfType(e, BuckLoadCall.class))
+        .map(BuckLoadCall::getLoadTargetArgument)
+        .map(BuckLoadTargetArgument::getString)
+        .map(BuckPsiUtils::getStringValueFromBuckString)
+        .flatMap(BuckTarget::parse)
+        .flatMap(target -> buckTargetLocator.resolve(sourceFile, target))
+        .flatMap(buckTargetLocator::findVirtualFileForExtensionFile)
+        .map(PsiManager.getInstance(project)::findFile)
+        .map(psiFile -> BuckPsiUtils.findSymbolsInPsiTree(psiFile, prefix))
+        .map(Map::keySet)
+        .ifPresent(
+            symbols ->
+                symbols
+                    .stream()
+                    .filter(symbol -> !symbol.startsWith("_")) // do not show private symbols
+                    .forEach(symbol -> addResultForTarget(result, symbol)));
   }
 
   /** Autocomplete buck targets within this buck file, as in ":targ" => ":target". */
@@ -245,8 +281,7 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     }
     // Autocomplete a target in *this* file
     String targetPrefix = prefixToAutocomplete.substring(1);
-    Map<String, PsiElement> targetsInPsiTree =
-        BuckPsiUtils.findTargetsInPsiTree(psiFile, targetPrefix);
+    Map<String, ?> targetsInPsiTree = BuckPsiUtils.findTargetsInPsiTree(psiFile, targetPrefix);
     for (String name : targetsInPsiTree.keySet()) {
       addResultForTarget(result, name);
     }
@@ -270,15 +305,25 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     }
     String cellName = matcher.group("cell");
     String cellPath = matcher.group("path");
-    String partial = matcher.group("partial");
-    BuckCellFinder buckCellFinder = BuckCellFinder.getInstance(project);
-    BuckCell buckCell = buckCellFinder.findBuckCell(sourceFile, cellName).orElse(null);
-    if (buckCell == null) {
+    BuckTargetLocator buckTargetLocator = BuckTargetLocator.getInstance(project);
+
+    BuckTargetPattern targetPattern =
+        BuckTargetPattern.parse(cellName + "//" + cellPath)
+            .flatMap(p -> buckTargetLocator.resolve(sourceFile, p))
+            .orElse(null);
+    if (targetPattern == null) {
       return;
     }
-    VirtualFile targetDir =
-        buckCellFinder.resolveCellPath(sourceFile, cellName + "//" + cellPath).orElse(null);
-    if (targetDir == null) {
+    BuckCellManager buckCellManager = BuckCellManager.getInstance(project);
+    Cell cell =
+        buckCellManager.findCellByName(targetPattern.getCellName().orElse(cellName)).orElse(null);
+    if (cell == null) {
+      return;
+    }
+
+    VirtualFile targetDirectory =
+        buckTargetLocator.findVirtualFileForTargetPattern(targetPattern).orElse(null);
+    if (targetDirectory == null) {
       return;
     }
     String partialPrefix;
@@ -287,13 +332,14 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     } else {
       partialPrefix = cellName + "//" + cellPath;
     }
-    for (VirtualFile child : targetDir.getChildren()) {
+    String partial = matcher.group("partial");
+    for (VirtualFile child : targetDirectory.getChildren()) {
       String name = child.getName();
       if (!name.startsWith(partial)) {
         continue;
       }
       if (child.isDirectory()) {
-        VirtualFile childBuckFile = child.findChild(buckCell.getBuildFileName());
+        VirtualFile childBuckFile = child.findChild(cell.getBuildfileName());
         if (childBuckFile != null && childBuckFile.exists()) {
           addResultForFile(result, childBuckFile, partialPrefix + name + ":");
         }
@@ -302,33 +348,35 @@ public class BuckTargetCompletionContributor extends CompletionContributor {
     }
   }
 
-  private static final Pattern TARGET_TO_BUCK_TARGET_PATTERN =
-      Pattern.compile("(?<cell>[^/:]*)//(?<path>[^:]+):(?<partial>[^:]*)");
-
   private void doTargetsForFullyQualifiedBuckTarget(
       VirtualFile sourceFile,
       Project project,
       String prefixToAutocomplete,
       CompletionResultSet result) {
-    Matcher matcher = TARGET_TO_BUCK_TARGET_PATTERN.matcher(prefixToAutocomplete);
-    if (!matcher.matches()) {
+    BuckTargetPattern pattern = BuckTargetPattern.parse(prefixToAutocomplete).orElse(null);
+    if (pattern == null) {
       return;
     }
-    String cellName = matcher.group("cell");
-    String cellPath = matcher.group("path");
-    String partial = matcher.group("partial");
-    BuckCellFinder buckCellFinder = BuckCellFinder.getInstance(project);
-    VirtualFile targetVirtualFile =
-        buckCellFinder.findBuckTargetFile(sourceFile, prefixToAutocomplete).orElse(null);
-    if (targetVirtualFile == null) {
+    BuckTargetLocator buckTargetLocator = BuckTargetLocator.getInstance(project);
+    VirtualFile targetBuildFile =
+        buckTargetLocator
+            .resolve(sourceFile, pattern)
+            .flatMap(buckTargetLocator::findVirtualFileForTargetPattern)
+            .orElse(null);
+    if (targetBuildFile == null) {
       return;
     }
-    PsiFile targetPsiFile = PsiManager.getInstance(project).findFile(targetVirtualFile);
-    Map<String, PsiElement> targetsInPsiTree =
-        BuckPsiUtils.findTargetsInPsiTree(targetPsiFile, partial);
+    PsiFile targetPsiFile = PsiManager.getInstance(project).findFile(targetBuildFile);
+    if (targetPsiFile == null) {
+      return;
+    }
+    Map<String, ?> targetsInPsiTree =
+        BuckPsiUtils.findTargetsInPsiTree(targetPsiFile, pattern.getRuleName().orElse(""));
+    String cellName = pattern.getCellName().orElse(null);
+    String cellPath = pattern.getCellPath().orElse("");
     for (String name : targetsInPsiTree.keySet()) {
       String completion;
-      if ("".equals(cellName)) {
+      if (cellName == null) {
         completion = cellPath + ":" + name;
       } else {
         completion = cellName + "//" + cellPath + ":" + name;
