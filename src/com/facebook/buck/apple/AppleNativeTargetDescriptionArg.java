@@ -17,7 +17,6 @@
 package com.facebook.buck.apple;
 
 import com.facebook.buck.core.exceptions.HumanReadableException;
-import com.facebook.buck.core.sourcepath.SourcePath;
 import com.facebook.buck.cxx.CxxLibraryDescription;
 import com.facebook.buck.swift.SwiftCommonArg;
 import com.google.common.collect.ImmutableMap;
@@ -32,8 +31,6 @@ public interface AppleNativeTargetDescriptionArg
   ImmutableSortedMap<String, ImmutableMap<String, String>> getConfigs();
 
   Optional<String> getHeaderPathPrefix();
-
-  Optional<SourcePath> getUmbrellaHeader();
 
   @Value.Default
   default boolean isModular() {

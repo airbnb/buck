@@ -43,7 +43,6 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Predicate;
 
 public class CxxPreprocessables {
@@ -158,19 +157,12 @@ public class CxxPreprocessables {
       SourcePathRuleFinder ruleFinder,
       Path root,
       ImmutableMap<Path, SourcePath> links,
-      HeaderMode headerMode,
-      Optional<SourcePath> umbrellaHeaderPath) {
+      HeaderMode headerMode) {
     switch (headerMode) {
       case SYMLINK_TREE_WITH_HEADER_MAP:
         return HeaderSymlinkTreeWithHeaderMap.create(target, filesystem, root, links, ruleFinder);
       case SYMLINK_TREE_WITH_MODULEMAP:
-        return HeaderSymlinkTreeWithModuleMap.create(
-            target,
-            filesystem,
-            root,
-            links,
-            ruleFinder,
-            umbrellaHeaderPath);
+        return HeaderSymlinkTreeWithModuleMap.create(target, filesystem, root, links, ruleFinder);
       case HEADER_MAP_ONLY:
         return new DirectHeaderMap(target, filesystem, root, links, ruleFinder);
       default:

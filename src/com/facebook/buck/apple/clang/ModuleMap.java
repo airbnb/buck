@@ -19,8 +19,6 @@ package com.facebook.buck.apple.clang;
 import com.google.common.base.Objects;
 import org.stringtemplate.v4.ST;
 
-import java.util.Optional;
-
 /**
  * Generate a modulemap, with optional references to a swift generated swift header.
  *
@@ -37,12 +35,11 @@ public class ModuleMap {
 
   private final SwiftMode swiftMode;
   private final String moduleName;
-  private final Optional<String> umbrellaHeader;
 
   private String generatedModule;
   private static final String template =
       "module <module_name> {\n"
-          + "    umbrella header \"<module_header>\"\n"
+          + "    umbrella header \"<module_name>.h\"\n"
           + "\n"
           + "    export *\n"
           + "    module * { export * }\n"
@@ -62,24 +59,16 @@ public class ModuleMap {
           + "<endif>"
           + "\n";
 
-  public ModuleMap(String moduleName, SwiftMode swiftMode, Optional<String> umbrellaHeader) {
+  public ModuleMap(String moduleName, SwiftMode swiftMode) {
     this.moduleName = moduleName;
     this.swiftMode = swiftMode;
-    this.umbrellaHeader = umbrellaHeader;
   }
 
   public String render() {
-    String moduleHeader;
-    if (umbrellaHeader.isPresent()) {
-      moduleHeader = umbrellaHeader.get();
-    } else {
-      moduleHeader = moduleName + ".h";
-    }
     if (this.generatedModule == null) {
       ST st =
           new ST(template)
               .add("module_name", moduleName)
-              .add("module_header", moduleHeader)
               .add("include_swift_header", false)
               .add("exclude_swift_header", false);
       switch (swiftMode) {

@@ -204,7 +204,6 @@ public class CxxBinaryFactory {
         cxxPlatform,
         CxxDescriptionEnhancer.parseHeaders(
             buildTarget, graphBuilder, ruleFinder, pathResolver, Optional.of(cxxPlatform), args),
-        Optional.empty(),
         HeaderVisibility.PRIVATE,
         true);
   }

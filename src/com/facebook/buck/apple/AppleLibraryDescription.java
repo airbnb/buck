@@ -710,7 +710,6 @@ public class AppleLibraryDescription
         ruleFinder,
         HeaderMode.SYMLINK_TREE_WITH_MODULEMAP,
         headers.build(),
-        args.getUmbrellaHeader(),
         HeaderVisibility.PUBLIC);
   }
 
@@ -739,8 +738,7 @@ public class AppleLibraryDescription
         ruleFinder,
         root,
         headers,
-        HeaderMode.SYMLINK_TREE_WITH_MODULEMAP,
-        args.getUmbrellaHeader());
+        HeaderMode.SYMLINK_TREE_WITH_MODULEMAP);
   }
 
   <U> Optional<U> createMetadataForLibrary(

@@ -175,7 +175,6 @@ public class PrebuiltCxxLibraryDescription
         graphBuilder,
         cxxPlatform,
         parseExportedHeaders(buildTarget, graphBuilder, cxxPlatform, args),
-        Optional.empty(),
         HeaderVisibility.PUBLIC,
         true);
   }
