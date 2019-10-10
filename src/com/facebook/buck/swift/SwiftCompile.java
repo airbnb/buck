@@ -92,6 +92,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   @AddToRuleKey(stringify = true)
   private final ImmutableList<Path> objectPaths;
   private final Optional<AbsPath> swiftFileListPath;
+  private final Optional<AbsPath> argsFilePath;
 
   @AddToRuleKey private final boolean shouldEmitSwiftdocs;
   @AddToRuleKey private final boolean useModulewrap;
@@ -169,6 +170,16 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
                         BuildTargetPaths.getScratchPath(
                             getProjectFilesystem(), getBuildTarget(), "%s__filelist.txt")))
             : Optional.empty();
+
+    this.argsFilePath =
+      swiftBuckConfig.getUseArgFile()
+          ? Optional.of(
+            getProjectFilesystem()
+                .getRootPath()
+                .resolve(
+                    BuildTargetPaths.getScratchPath(
+                        getProjectFilesystem(), getBuildTarget(), "%s__swiftcompile.argsfile")))
+          : Optional.empty();
 
     this.shouldEmitSwiftdocs = swiftBuckConfig.getEmitSwiftdocs();
     this.useModulewrap = swiftBuckConfig.getUseModulewrap();
@@ -274,7 +285,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
 
     ProjectFilesystem projectFilesystem = getProjectFilesystem();
     return new SwiftCompileStep(
-        projectFilesystem.getRootPath(), ImmutableMap.of(), compilerCommand.build());
+        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build());
   }
 
   @VisibleForTesting
@@ -314,7 +325,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
 
     ProjectFilesystem projectFilesystem = getProjectFilesystem();
     return new SwiftCompileStep(
-        projectFilesystem.getRootPath(), ImmutableMap.of(), compilerCommand.build());
+        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build());
   }
 
   @Override
