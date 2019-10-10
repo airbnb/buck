@@ -35,6 +35,7 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public static final String COPY_STDLIB_TO_FRAMEWORKS = "copy_stdlib_to_frameworks";
   public static final String USE_LIPO_THIN = "use_lipo_thin";
   public static final String EMIT_SWIFTDOCS = "emit_swiftdocs";
+  public static final String USE_ARG_FILE = "use_arg_file";
   private final BuckConfig delegate;
 
   @Override
@@ -70,6 +71,10 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
 
   public boolean getUseFileList() {
     return delegate.getBooleanValue(SECTION_NAME, USE_FILELIST, false);
+  }
+
+  public boolean getUseArgFile() {
+    return delegate.getBooleanValue(SECTION_NAME, USE_ARG_FILE, false);
   }
 
   public boolean getUseModulewrap() {
