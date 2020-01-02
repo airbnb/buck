@@ -187,6 +187,7 @@ class XctoolRunTestsStep implements Step {
     this.command =
         createCommandArgs(
             xctoolPath,
+            outputPath.getParent().resolve("test-output.xml"), // junit output path
             sdkName,
             destinationSpecifier,
             logicTestBundlePaths,
@@ -555,6 +556,7 @@ class XctoolRunTestsStep implements Step {
 
   private static ImmutableList<String> createCommandArgs(
       Path xctoolPath,
+      Path junitOutputPath,
       String sdkName,
       Optional<String> destinationSpecifier,
       Collection<Path> logicTestBundlePaths,
@@ -565,6 +567,8 @@ class XctoolRunTestsStep implements Step {
     args.add(xctoolPath.toString());
     args.add("-reporter");
     args.add("json-stream");
+    args.add("-reporter");
+    args.add("junit:" + junitOutputPath);
     args.add("-sdk", sdkName);
     if (destinationSpecifier.isPresent()) {
       args.add("-destination");
