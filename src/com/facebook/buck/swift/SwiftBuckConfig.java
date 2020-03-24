@@ -36,6 +36,7 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public static final String USE_LIPO_THIN = "use_lipo_thin";
   public static final String EMIT_SWIFTDOCS = "emit_swiftdocs";
   public static final String USE_ARG_FILE = "use_arg_file";
+  public static final String ADD_AST_PATH = "add_ast_path";
   private final BuckConfig delegate;
 
   @Override
@@ -75,6 +76,10 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
 
   public boolean getUseArgFile() {
     return delegate.getBooleanValue(SECTION_NAME, USE_ARG_FILE, false);
+  }
+
+  public boolean getAddASTPath() {
+    return delegate.getBooleanValue(SECTION_NAME, ADD_AST_PATH, true);
   }
 
   public boolean getUseModulewrap() {

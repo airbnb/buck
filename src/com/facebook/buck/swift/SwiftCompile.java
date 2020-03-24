@@ -99,6 +99,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   @AddToRuleKey private final boolean compileForceCache;
   @AddToRuleKey(stringify = true)
   private final Path swiftdocPath;
+  private final boolean addASTPath;
 
   @AddToRuleKey private final ImmutableSortedSet<SourcePath> srcs;
   @AddToRuleKey private final SwiftTargetTriple swiftTarget;
@@ -185,6 +186,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
     this.useModulewrap = swiftBuckConfig.getUseModulewrap();
     this.compileForceCache = swiftBuckConfig.getCompileForceCache();
     this.swiftdocPath = outputPath.resolve(escapedModuleName + ".swiftdoc");
+    this.addASTPath = swiftBuckConfig.getAddASTPath();
 
     this.srcs = ImmutableSortedSet.copyOf(srcs);
     this.swiftTarget = swiftTarget;
@@ -445,7 +447,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   }
 
   public ImmutableList<Arg> getAstLinkArgs() {
-    if (!useModulewrap) {
+    if (!useModulewrap && addASTPath) {
       return ImmutableList.<Arg>builder()
           .addAll(StringArg.from("-Xlinker", "-add_ast_path"))
           .add(SourcePathArg.of(ExplicitBuildTargetSourcePath.of(getBuildTarget(), modulePath)))
