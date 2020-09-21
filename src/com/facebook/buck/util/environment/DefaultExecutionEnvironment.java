@@ -76,7 +76,11 @@ public class DefaultExecutionEnvironment implements ExecutionEnvironment {
 
   @Override
   public Optional<String> getWifiSsid() {
-    return NetworkInfo.getWifiSsid();
+    return Optional.empty();
+    // The following fails on macOS Big Sur with error:
+    // "java.lang.NoClassDefFoundError: Could not initialize class com.facebook.buck.util.environment.MacWifiSsidFinder"
+    // So we return `Optional.empty()` instead to avoid this issue.
+    // return NetworkInfo.getWifiSsid();
   }
 
   @Override
