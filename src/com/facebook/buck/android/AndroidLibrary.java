@@ -38,14 +38,15 @@ import com.facebook.buck.jvm.java.DefaultJavaLibrary;
 import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.JarBuildStepsFactory;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
+import com.facebook.buck.jvm.java.JavaCDBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibraryDeps;
 import com.facebook.buck.jvm.java.JavacFactory;
 import com.facebook.buck.jvm.java.JavacOptions;
 import com.facebook.buck.jvm.java.UnusedDependenciesFinderFactory;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
-import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.SortedSet;
@@ -61,6 +62,7 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
       BuildRuleParams params,
       ActionGraphBuilder graphBuilder,
       JavaBuckConfig javaBuckConfig,
+      JavaCDBuckConfig javaCDBuckConfig,
       DownwardApiConfig downwardApiConfig,
       JavacFactory javacFactory,
       JavacOptions libraryJavacOptions,
@@ -75,6 +77,7 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
         params,
         graphBuilder,
         javaBuckConfig,
+        javaCDBuckConfig,
         downwardApiConfig,
         javacFactory,
         libraryJavacOptions,
@@ -111,7 +114,10 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
       boolean neverMarkAsUnusedDependency,
       boolean isJavaCDEnabled,
       Tool javaRuntimeLauncher,
-      Supplier<Path> javacdBinaryPathSupplier) {
+      Supplier<SourcePath> javacdBinaryPathSourcePathSupplier,
+      ImmutableList<String> startCommandOptions,
+      int workerToolPoolSize,
+      int borrowFromPoolTimeoutInSeconds) {
     super(
         buildTarget,
         projectFilesystem,
@@ -136,9 +142,12 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
         neverMarkAsUnusedDependency,
         isJavaCDEnabled,
         javaRuntimeLauncher,
-        javacdBinaryPathSupplier);
+        javacdBinaryPathSourcePathSupplier,
+        startCommandOptions,
+        workerToolPoolSize,
+        borrowFromPoolTimeoutInSeconds);
     this.manifestFile = manifestFile;
-    this.type = jvmLanguage.isPresent() ? evalType(jvmLanguage.get()) : super.getType();
+    this.type = jvmLanguage.map(this::evalType).orElseGet(super::getType);
   }
 
   /**
@@ -166,9 +175,8 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
   public void addToCollector(
       ActionGraphBuilder graphBuilder, AndroidPackageableCollector collector) {
     super.addToCollector(graphBuilder, collector);
-    if (manifestFile.isPresent()) {
-      collector.addManifestPiece(this.getBuildTarget(), manifestFile.get());
-    }
+    manifestFile.ifPresent(
+        sourcePath -> collector.addManifestPiece(this.getBuildTarget(), sourcePath));
   }
 
   public static class Builder {
@@ -184,6 +192,7 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
         BuildRuleParams params,
         ActionGraphBuilder graphBuilder,
         JavaBuckConfig javaBuckConfig,
+        JavaCDBuckConfig javaCDBuckConfig,
         DownwardApiConfig downwardApiConfig,
         JavacFactory javacFactory,
         JavacOptions libraryJavacOptions,
@@ -202,6 +211,7 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
               graphBuilder,
               compilerFactory,
               javaBuckConfig,
+              javaCDBuckConfig,
               downwardApiConfig,
               args,
               cellPathResolver);
@@ -229,7 +239,10 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
               neverMarkAsUnusedDependency,
               isJavaCDEnabled,
               javaRuntimeLauncher,
-              javacdBinaryPathSupplier) ->
+              javacdBinaryPathSourcePathSupplier,
+              startCommandOptions,
+              workerToolPoolSize,
+              borrowFromPoolTimeoutInSeconds) ->
               new AndroidLibrary(
                   target,
                   filesystem,
@@ -256,7 +269,10 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
                   neverMarkAsUnusedDependency,
                   isJavaCDEnabled,
                   javaRuntimeLauncher,
-                  javacdBinaryPathSupplier));
+                  javacdBinaryPathSourcePathSupplier,
+                  startCommandOptions,
+                  workerToolPoolSize,
+                  borrowFromPoolTimeoutInSeconds));
       delegateBuilder.setJavacOptions(libraryJavacOptions);
       delegateBuilder.setTests(args.getTests());
 
@@ -279,18 +295,17 @@ public class AndroidLibrary extends DefaultJavaLibrary implements AndroidPackage
 
       getDummyRDotJava()
           .ifPresent(
-              dummyRDotJava -> {
-                delegateBuilder.setDeps(
-                    new JavaLibraryDeps.Builder(graphBuilder)
-                        .from(
-                            JavaLibraryDeps.newInstance(
-                                args,
-                                graphBuilder,
-                                buildTarget.getTargetConfiguration(),
-                                compilerFactory))
-                        .addDepTargets(dummyRDotJava.getBuildTarget())
-                        .build());
-              });
+              dummyRDotJava ->
+                  delegateBuilder.setDeps(
+                      new JavaLibraryDeps.Builder(graphBuilder)
+                          .from(
+                              JavaLibraryDeps.newInstance(
+                                  args,
+                                  graphBuilder,
+                                  buildTarget.getTargetConfiguration(),
+                                  compilerFactory))
+                          .addDepTargets(dummyRDotJava.getBuildTarget())
+                          .build()));
 
       delegate = delegateBuilder.build();
     }
