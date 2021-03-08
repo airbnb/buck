@@ -452,7 +452,7 @@ public abstract class SwiftCompileBase extends AbstractBuildRule
   }
 
   public ImmutableList<Arg> getAstLinkArgs() {
-    if (this.getAstLinkArgs) {
+    if (this.addASTPath) {
       return ImmutableList.<Arg>builder()
           .addAll(StringArg.from("-Xlinker", "-add_ast_path"))
           .add(StringArg.of("-Xlinker"))
