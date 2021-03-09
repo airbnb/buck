@@ -122,7 +122,7 @@ public class DefaultJavaLibraryIntegrationTest extends AbiCompilationModeTest {
   public void testBootclasspathIsPassedCorrectly() throws IOException {
     setUpProjectWorkspaceForScenario("bootclasspath");
     workspace.addBuckConfigLocalOption(
-        "java",
+        JavaBuckConfig.SECTION,
         "bootclasspath-8",
         Joiner.on(":").join("boot.jar", "other.jar", Bootclasspath.getJdk8StubJarPath()));
     ProcessResult processResult =
@@ -1311,7 +1311,7 @@ public class DefaultJavaLibraryIntegrationTest extends AbiCompilationModeTest {
             // out the caused
             // exception!
             "When running <javac>.",
-            "When building rule //:main."));
+            "When building rule //:main ("));
   }
 
   @Test

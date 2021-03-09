@@ -23,7 +23,6 @@ import com.facebook.buck.core.filesystems.AbsPath;
 import com.facebook.buck.core.rules.knowntypes.provider.KnownRuleTypesProvider;
 import com.facebook.buck.core.starlark.eventhandler.EventHandler;
 import com.facebook.buck.event.BuckEventBusForTests;
-import com.facebook.buck.parser.LabelCache;
 import com.facebook.buck.parser.api.BuildFileManifest;
 import com.facebook.buck.parser.api.RawTargetNode;
 import com.facebook.buck.parser.config.ParserConfig;
@@ -106,11 +105,10 @@ public class SkylarkProjectBuildFileParserTestUtils {
             options.getUserDefinedRulesState(),
             options.getImplicitNativeRulesState(),
             new RuleFunctionFactory(new DefaultTypeCoercerFactory()),
-            LabelCache.newLabelCache(),
             knownRuleTypesProvider.getUserDefinedRuleTypes(cell),
             options.getPerFeatureProviders()),
         eventHandler,
-        NativeGlobber::create);
+        NativeGlobber.Factory.INSTANCE);
   }
 
   static RawTargetNode getSingleRule(SkylarkProjectBuildFileParser parser, AbsPath buildFile)

@@ -23,6 +23,7 @@ import com.facebook.buck.core.cell.CellPathResolver;
 import com.facebook.buck.core.cell.nameresolver.CellNameResolver;
 import com.facebook.buck.core.description.arg.Hint;
 import com.facebook.buck.core.description.attr.ImplicitDepsInferringDescription;
+import com.facebook.buck.core.filesystems.RelPath;
 import com.facebook.buck.core.model.BuildTarget;
 import com.facebook.buck.core.model.InternalFlavor;
 import com.facebook.buck.core.model.TargetConfiguration;
@@ -32,18 +33,20 @@ import com.facebook.buck.core.rules.BuildRuleCreationContextWithTargetGraph;
 import com.facebook.buck.core.rules.BuildRuleParams;
 import com.facebook.buck.core.rules.DescriptionWithTargetGraph;
 import com.facebook.buck.core.sourcepath.SourcePath;
+import com.facebook.buck.core.sourcepath.resolver.SourcePathResolverAdapter;
 import com.facebook.buck.core.toolchain.ToolchainProvider;
 import com.facebook.buck.core.toolchain.toolprovider.ToolProvider;
 import com.facebook.buck.core.util.immutables.RuleArg;
 import com.facebook.buck.cxx.toolchain.CxxPlatformsProvider;
 import com.facebook.buck.cxx.toolchain.UnresolvedCxxPlatform;
 import com.facebook.buck.downwardapi.config.DownwardApiConfig;
-import com.facebook.buck.io.file.MorePaths;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.pathformat.PathFormatter;
 import com.facebook.buck.jvm.core.JavaAbis;
 import com.facebook.buck.jvm.core.JavaLibrary;
 import com.facebook.buck.jvm.java.CalculateClassAbi;
 import com.facebook.buck.jvm.java.DefaultJavaLibrary;
+import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaCDBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibraryDeps;
@@ -219,15 +222,17 @@ public class RobolectricTestDescription
     ToolProvider aapt2ToolProvider = androidPlatformTarget.getAapt2ToolProvider();
 
     ImmutableList<Aapt2Compile> compileables =
-        AndroidBinaryResourcesGraphEnhancer.createAapt2CompileablesForResourceProvider(
-            projectFilesystem,
-            graphBuilder,
-            aapt2ToolProvider,
-            resourcesProvider,
-            buildTarget,
-            true,
-            false,
-            downwardApiConfig.isEnabledForAndroid());
+        androidResourceDeps.stream()
+            .filter(resource -> resource.getRes() != null)
+            .map(
+                resource ->
+                    (Aapt2Compile)
+                        graphBuilder.requireRule(
+                            resource
+                                .getBuildTarget()
+                                .withAppendedFlavors(
+                                    AndroidResourceDescription.AAPT2_COMPILE_FLAVOR)))
+            .collect(ImmutableList.toImmutableList());
 
     BuildTarget aapt2LinkBuildTarget =
         buildTarget.withAppendedFlavors(InternalFlavor.of("aapt2_link"));
@@ -274,9 +279,14 @@ public class RobolectricTestDescription
                 .filter(Objects::nonNull)
                 .collect(ImmutableSortedSet.toImmutableSortedSet(Ordering.natural())),
             javaBuckConfig.getDelegate().getView(BuildBuckConfig.class).areExternalActionsEnabled(),
-            javaBuckConfig.getDefaultJavaOptions().getJavaRuntime());
+            javaBuckConfig.getDefaultJavaOptions().getJavaRuntime(),
+            DefaultJavaLibraryRules.getExternalActionsSourcePathSupplier(projectFilesystem));
     graphBuilder.addToIndex(binaryResources);
 
+    SourcePathResolverAdapter sourcePathResolver = graphBuilder.getSourcePathResolver();
+    RelPath outputPath =
+        sourcePathResolver.getCellUnsafeRelPath(binaryResources.getSourcePathToOutput());
+    RelPath manifestPath = sourcePathResolver.getCellUnsafeRelPath(args.getRobolectricManifest());
     UnitTestOptions unitTestOptions =
         new UnitTestOptions(
             buildTarget.withAppendedFlavors(InternalFlavor.of("unit_test_options")),
@@ -284,15 +294,12 @@ public class RobolectricTestDescription
             graphBuilder,
             ImmutableMap.of(
                 "android_resource_apk",
-                MorePaths.pathWithPlatformSeparators(
-                    graphBuilder
-                        .getSourcePathResolver()
-                        .getCellUnsafeRelPath(binaryResources.getSourcePathToOutput())),
+                // wrapped to unix path separators as otherwise Robolectic tests manifest get broken
+                // on windows due to different path separators.
+                // java works fine with '/' on all platforms
+                PathFormatter.pathWithUnixSeparators(outputPath),
                 "android_merged_manifest",
-                MorePaths.pathWithPlatformSeparators(
-                    graphBuilder
-                        .getSourcePathResolver()
-                        .getCellUnsafeRelPath(args.getRobolectricManifest()))));
+                PathFormatter.pathWithUnixSeparators(manifestPath)));
     graphBuilder.addToIndex(unitTestOptions);
     params = params.copyAppendingExtraDeps(ImmutableSortedSet.of(unitTestOptions));
 

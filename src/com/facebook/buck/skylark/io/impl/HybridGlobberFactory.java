@@ -18,14 +18,16 @@ package com.facebook.buck.skylark.io.impl;
 
 import com.facebook.buck.core.filesystems.AbsPath;
 import com.facebook.buck.io.watchman.ProjectWatch;
+import com.facebook.buck.io.watchman.Watchman;
 import com.facebook.buck.io.watchman.WatchmanClient;
+import com.facebook.buck.io.watchman.WatchmanQuery;
 import com.facebook.buck.skylark.io.Globber;
 import com.facebook.buck.skylark.io.GlobberFactory;
 import com.facebook.buck.util.environment.Platform;
+import com.facebook.buck.util.types.Either;
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 
@@ -70,11 +72,12 @@ public class HybridGlobberFactory implements GlobberFactory {
    * @throws IOException
    * @throws InterruptedException
    */
-  public Optional<WatchProjectResult> getWatchmanRelativizedFinalPath(AbsPath filePath)
-      throws IOException, InterruptedException {
+  public Either<WatchProjectResult, WatchmanClient.Timeout> getWatchmanRelativizedFinalPath(
+      AbsPath filePath) throws IOException, InterruptedException {
     return watchmanClient
-        .queryWithTimeout(TIMEOUT_NANOS, WARN_TIMEOUT_NANOS, "watch-project", filePath.toString())
-        .map(
+        .queryWithTimeout(
+            TIMEOUT_NANOS, WARN_TIMEOUT_NANOS, WatchmanQuery.watchProject(filePath.toString()))
+        .mapLeft(
             result -> {
               String watchRoot = (String) result.get("watch");
               String relativePath = (String) result.get("relative_path");
@@ -104,10 +107,10 @@ public class HybridGlobberFactory implements GlobberFactory {
         // If exception is thrown while getting the final path from Watchman or relativizing the
         // path, report the original exception.
         try {
-          Optional<WatchProjectResult> watchmanRelativizedPaths =
+          Either<WatchProjectResult, WatchmanClient.Timeout> watchmanRelativizedPaths =
               getWatchmanRelativizedFinalPath(basePath);
-          if (watchmanRelativizedPaths.isPresent()) {
-            WatchProjectResult result = watchmanRelativizedPaths.get();
+          if (watchmanRelativizedPaths.isLeft()) {
+            WatchProjectResult result = watchmanRelativizedPaths.getLeft();
             watchRoot = result.watchRoot;
             relativeRoot = result.relativePath;
           }
@@ -121,11 +124,18 @@ public class HybridGlobberFactory implements GlobberFactory {
         WatchmanGlobber.create(watchmanClient, syncCookieState, relativeRoot, watchRoot));
   }
 
+  @Override
+  public void close() throws IOException {
+    watchmanClient.close();
+  }
+
   public static HybridGlobberFactory using(
-      WatchmanClient watchmanClient,
-      SyncCookieState syncCookieState,
-      java.nio.file.Path projectRoot,
-      ImmutableMap<AbsPath, ProjectWatch> projectWatches) {
-    return new HybridGlobberFactory(watchmanClient, syncCookieState, projectRoot, projectWatches);
+      Watchman watchman, SyncCookieState syncCookieState, java.nio.file.Path projectRoot)
+      throws IOException {
+    return new HybridGlobberFactory(
+        watchman.createReconnectingClient(),
+        syncCookieState,
+        projectRoot,
+        watchman.getProjectWatches());
   }
 }

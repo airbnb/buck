@@ -308,7 +308,6 @@ public class DefaultProjectBuildFileParserFactory implements ProjectBuildFilePar
             buildFileParserOptions.getUserDefinedRulesState(),
             buildFileParserOptions.getImplicitNativeRulesState(),
             new RuleFunctionFactory(typeCoercerFactory),
-            LabelCache.newLabelCache(),
             knownUserDefinedRuleTypes,
             buildFileParserOptions.getPerFeatureProviders());
 
@@ -343,11 +342,10 @@ public class DefaultProjectBuildFileParserFactory implements ProjectBuildFilePar
     SyncCookieState syncCookieState = new SyncCookieState();
     return skylarkGlobHandler == SkylarkGlobHandler.JAVA
             || buildFileParserOptions.getWatchman() == WatchmanFactory.NULL_WATCHMAN
-        ? NativeGlobber::create
+        ? NativeGlobber.Factory.INSTANCE
         : HybridGlobberFactory.using(
-            buildFileParserOptions.getWatchman().createClient(),
+            buildFileParserOptions.getWatchman(),
             syncCookieState,
-            buildFileParserOptions.getProjectRoot().getPath(),
-            buildFileParserOptions.getWatchman().getProjectWatches());
+            buildFileParserOptions.getProjectRoot().getPath());
   }
 }

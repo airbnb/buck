@@ -30,11 +30,13 @@ import com.facebook.buck.io.watchman.StubWatchmanClient;
 import com.facebook.buck.io.watchman.Watchman;
 import com.facebook.buck.io.watchman.WatchmanClient;
 import com.facebook.buck.io.watchman.WatchmanFactory;
+import com.facebook.buck.io.watchman.WatchmanQuery;
 import com.facebook.buck.io.watchman.WatchmanQueryFailedException;
 import com.facebook.buck.testutil.AssumePath;
 import com.facebook.buck.testutil.TemporaryPaths;
 import com.facebook.buck.testutil.TestConsole;
 import com.facebook.buck.util.timing.FakeClock;
+import com.facebook.buck.util.types.Either;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -282,7 +284,10 @@ public class WatchmanGlobberTest {
   public void noResultsAreReturnedIfWatchmanDoesNotProduceAnything() throws Exception {
     globber =
         WatchmanGlobber.create(
-            new StubWatchmanClient(Optional.empty()), new SyncCookieState(), "", root.toString());
+            new StubWatchmanClient(Either.ofRight(WatchmanClient.Timeout.INSTANCE)),
+            new SyncCookieState(),
+            "",
+            root.toString());
     assertFalse(globber.run(ImmutableList.of("*.txt"), ImmutableList.of(), false).isPresent());
   }
 
@@ -310,18 +315,19 @@ public class WatchmanGlobberTest {
     WatchmanClient client =
         new WatchmanClient() {
           @Override
-          public Optional<? extends Map<String, ?>> queryWithTimeout(
-              long timeoutNanos, long warnTimeoutNanos, Object... query) {
+          public Either<Map<String, Object>, Timeout> queryWithTimeout(
+              long timeoutNanos, long warnTimeNanos, WatchmanQuery query) {
             LOG.info("Processing query: %s", query);
-            if (query.length >= 2 && query[0].equals("query")) {
-              return Optional.of(
+            if (query instanceof WatchmanQuery.Query) {
+              return Either.ofLeft(
                   ImmutableMap.of(
                       "version",
                       "4.9.4",
                       "error",
                       String.format(
                           "RootResolveError: unable to resolve root %s: directory %s not watched",
-                          query[1], query[1])));
+                          ((WatchmanQuery.Query) query).getPath(),
+                          ((WatchmanQuery.Query) query).getPath())));
 
             } else {
               throw new RuntimeException("Watchman query not implemented");
@@ -435,13 +441,13 @@ public class WatchmanGlobberTest {
 
   private static class CapturingWatchmanClient implements WatchmanClient {
 
-    private ImmutableList<Object> query;
+    private WatchmanQuery query;
 
     @Override
-    public Optional<? extends Map<String, ?>> queryWithTimeout(
-        long timeoutNanos, long warnTimeoutNanos, Object... query) {
-      this.query = ImmutableList.copyOf(query);
-      return Optional.empty();
+    public Either<Map<String, Object>, Timeout> queryWithTimeout(
+        long timeoutNanos, long warnTimeNanos, WatchmanQuery query) {
+      this.query = query;
+      return Either.ofLeft(ImmutableMap.of("files", ImmutableList.of()));
     }
 
     @Override
@@ -457,7 +463,7 @@ public class WatchmanGlobberTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> getQueryExpression() {
-      return (Map<String, Object>) query.get(2);
+      return ((WatchmanQuery.Query) query).getArgs();
     }
   }
 }

@@ -26,10 +26,10 @@ import com.facebook.buck.io.filesystem.PathMatcher;
 import com.facebook.buck.io.watchman.WatchmanEvent.Type;
 import com.facebook.buck.util.Threads;
 import com.facebook.buck.util.concurrent.MostExecutors;
+import com.facebook.buck.util.types.Either;
 import com.facebook.buck.util.types.Unit;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -85,7 +85,7 @@ public class WatchmanWatcher {
 
   private final EventBus fileChangeEventBus;
   private final WatchmanClientFactory watchmanClientFactory;
-  private final ImmutableMap<AbsPath, WatchmanQuery> queries;
+  private final ImmutableMap<AbsPath, WatchmanWatcherQuery> queries;
   private final Map<AbsPath, WatchmanCursor> cursors;
   private final int numThreads;
 
@@ -117,7 +117,7 @@ public class WatchmanWatcher {
       EventBus fileChangeEventBus,
       WatchmanClientFactory watchmanClientFactory,
       long timeoutMillis,
-      ImmutableMap<AbsPath, WatchmanQuery> queries,
+      ImmutableMap<AbsPath, WatchmanWatcherQuery> queries,
       Map<AbsPath, WatchmanCursor> cursors,
       int numThreads) {
     this.fileChangeEventBus = fileChangeEventBus;
@@ -129,11 +129,12 @@ public class WatchmanWatcher {
   }
 
   @VisibleForTesting
-  static ImmutableMap<AbsPath, WatchmanQuery> createQueries(
+  static ImmutableMap<AbsPath, WatchmanWatcherQuery> createQueries(
       ImmutableMap<AbsPath, ProjectWatch> projectWatches,
       ImmutableSet<PathMatcher> ignorePaths,
       Set<Capability> watchmanCapabilities) {
-    ImmutableMap.Builder<AbsPath, WatchmanQuery> watchmanQueryBuilder = ImmutableMap.builder();
+    ImmutableMap.Builder<AbsPath, WatchmanWatcherQuery> watchmanQueryBuilder =
+        ImmutableMap.builder();
     for (Map.Entry<AbsPath, ProjectWatch> entry : projectWatches.entrySet()) {
       watchmanQueryBuilder.put(
           entry.getKey(), createQuery(entry.getValue(), ignorePaths, watchmanCapabilities));
@@ -142,7 +143,7 @@ public class WatchmanWatcher {
   }
 
   @VisibleForTesting
-  static WatchmanQuery createQuery(
+  static WatchmanWatcherQuery createQuery(
       ProjectWatch projectWatch,
       ImmutableSet<PathMatcher> ignorePaths,
       Set<Capability> watchmanCapabilities) {
@@ -174,15 +175,15 @@ public class WatchmanWatcher {
     if (watchPrefix.isPresent()) {
       sinceParams.put("relative_root", watchPrefix.get());
     }
-    return ImmutableWatchmanQuery.ofImpl(watchRoot, sinceParams);
+    return ImmutableWatchmanWatcherQuery.ofImpl(watchRoot, sinceParams);
   }
 
   @VisibleForTesting
-  ImmutableList<Object> getWatchmanQuery(AbsPath cellPath) {
+  Optional<WatchmanQuery.Query> getWatchmanQuery(AbsPath cellPath) {
     if (queries.containsKey(cellPath) && cursors.containsKey(cellPath)) {
-      return queries.get(cellPath).toList(cursors.get(cellPath).get());
+      return Optional.of(queries.get(cellPath).toQuery(cursors.get(cellPath).get()));
     }
-    return ImmutableList.of();
+    return Optional.empty();
   }
 
   /**
@@ -207,7 +208,7 @@ public class WatchmanWatcher {
       for (AbsPath cellPath : queries.keySet()) {
         watchmanQueries.add(
             () -> {
-              WatchmanQuery query = queries.get(cellPath);
+              WatchmanWatcherQuery query = queries.get(cellPath);
               WatchmanCursor cursor = cursors.get(cellPath);
               if (query != null && cursor != null) {
                 try (SimplePerfEvent.Scope perfEvent =
@@ -267,25 +268,25 @@ public class WatchmanWatcher {
       FreshInstanceAction freshInstanceAction,
       AbsPath cellPath,
       WatchmanClient client,
-      WatchmanQuery query,
+      WatchmanWatcherQuery query,
       WatchmanCursor cursor,
       AtomicBoolean filesHaveChanged,
       SimplePerfEvent.Scope perfEvent)
       throws IOException, InterruptedException {
     try {
-      Optional<? extends Map<String, ? extends Object>> queryResponse;
+      Either<Map<String, Object>, WatchmanClient.Timeout> queryResponse;
       try (SimplePerfEvent.Scope ignored =
           SimplePerfEvent.scope(buckEventBus.isolated(), "query")) {
         queryResponse =
             client.queryWithTimeout(
                 TimeUnit.MILLISECONDS.toNanos(timeoutMillis),
                 DEFAULT_WARN_TIMEOUT_NANOS,
-                query.toList(cursor.get()).toArray());
+                query.toQuery(cursor.get()));
       }
 
       try (SimplePerfEvent.Scope ignored =
           SimplePerfEvent.scope(buckEventBus.isolated(), "process_response")) {
-        if (!queryResponse.isPresent()) {
+        if (!queryResponse.isLeft()) {
           LOG.warn(
               "Could not get response from Watchman for query %s within %d ms",
               query, timeoutMillis);
@@ -300,7 +301,7 @@ public class WatchmanWatcher {
           return;
         }
 
-        Map<String, ? extends Object> response = queryResponse.get();
+        Map<String, ? extends Object> response = queryResponse.getLeft();
         String error = (String) response.get("error");
         if (error != null) {
           // This message is not de-duplicated via WatchmanDiagnostic.

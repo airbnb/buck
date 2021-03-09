@@ -20,20 +20,108 @@ import com.facebook.buck.core.util.immutables.BuckStyleValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
-@BuckStyleValue
-abstract class WatchmanQuery {
+/** Enumerate all watchman queries. */
+public abstract class WatchmanQuery {
 
-  abstract String getQueryPath();
+  private WatchmanQuery() {}
 
-  abstract ImmutableMap<String, Object> getQueryParams();
+  public abstract ImmutableList<Object> toProtocolArgs();
 
-  public ImmutableList<Object> toList(String sinceCursor) {
-    return ImmutableList.of(
-        "query",
-        getQueryPath(),
-        ImmutableMap.<String, Object>builder()
-            .put("since", sinceCursor)
-            .putAll(getQueryParams())
-            .build());
+  /** {@code query} query. */
+  @BuckStyleValue
+  public abstract static class Query extends WatchmanQuery {
+    public abstract String getPath();
+
+    public abstract ImmutableMap<String, Object> getArgs();
+
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("query", getPath(), getArgs());
+    }
+  }
+
+  /** {@code version} query. */
+  @BuckStyleValue
+  public abstract static class Version extends WatchmanQuery {
+    public abstract ImmutableMap<String, Object> getArgs();
+
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("version", getArgs());
+    }
+  }
+
+  /** {@code watch-project} query. */
+  @BuckStyleValue
+  public abstract static class WatchProject extends WatchmanQuery {
+    public abstract String getPath();
+
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("watch-project", getPath());
+    }
+  }
+
+  /** {@code watch} query. */
+  @BuckStyleValue
+  public abstract static class Watch extends WatchmanQuery {
+    public abstract String getPath();
+
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("watch", getPath());
+    }
+  }
+
+  /** {@code clock} query. */
+  @BuckStyleValue
+  public abstract static class Clock extends WatchmanQuery {
+    public abstract String getPath();
+
+    public abstract ImmutableMap<String, Object> getArgs();
+
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("clock", getPath(), getArgs());
+    }
+  }
+
+  /** {@code get-pid} query. */
+  @BuckStyleValue
+  public abstract static class GetPid extends WatchmanQuery {
+    @Override
+    public ImmutableList<Object> toProtocolArgs() {
+      return ImmutableList.of("get-pid");
+    }
+  }
+
+  /** {@code query} query. */
+  public static Query query(String path, ImmutableMap<String, Object> params) {
+    return ImmutableQuery.ofImpl(path, params);
+  }
+
+  /** {@code clock} query. */
+  public static Clock clock(String path, ImmutableMap<String, Object> args) {
+    return ImmutableClock.ofImpl(path, args);
+  }
+
+  /** {@code watch-project} query. */
+  public static WatchProject watchProject(String path) {
+    return ImmutableWatchProject.ofImpl(path);
+  }
+
+  /** {@code watch} query. */
+  public static Watch watch(String path) {
+    return ImmutableWatch.ofImpl(path);
+  }
+
+  /** {@code version} query. */
+  public static Version version(ImmutableMap<String, Object> params) {
+    return ImmutableVersion.ofImpl(params);
+  }
+
+  /** {@code get-pid} query. */
+  public static GetPid getPid() {
+    return ImmutableGetPid.of();
   }
 }
