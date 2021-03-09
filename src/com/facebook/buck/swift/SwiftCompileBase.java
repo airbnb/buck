@@ -131,6 +131,8 @@ public abstract class SwiftCompileBase extends AbstractBuildRule
 
   @AddToRuleKey private final boolean useDebugPrefixMap;
 
+  @AddToRuleKey private final boolean addASTPath;
+
   @AddToRuleKey protected final boolean shouldEmitClangModuleBreadcrumbs;
 
   // The following fields do not have to be part of the rulekey, all the other must.
@@ -220,6 +222,7 @@ public abstract class SwiftCompileBase extends AbstractBuildRule
     this.inputBasedEnabled = swiftBuckConfig.getInputBasedCompileEnabled();
     this.debugPrefixMap = debugPrefixMap;
     this.useDebugPrefixMap = swiftBuckConfig.getUseDebugPrefixMap();
+    this.addASTPath = swiftBuckConfig.getAddASTPath();
     this.shouldEmitClangModuleBreadcrumbs = swiftBuckConfig.getEmitClangModuleBreadcrumbs();
     performChecks(buildTarget);
   }
@@ -449,14 +452,18 @@ public abstract class SwiftCompileBase extends AbstractBuildRule
   }
 
   public ImmutableList<Arg> getAstLinkArgs() {
-    return ImmutableList.<Arg>builder()
-        .addAll(StringArg.from("-Xlinker", "-add_ast_path"))
-        .add(StringArg.of("-Xlinker"))
-        // NB: The paths to the .swiftmodule files will be relative to the cell, not absolute.
-        //     This makes it non-machine specific but if we change the behavior, the OSO
-        //     rewriting code needs to adjusted to also fix-up N_AST entries.
-        .add(SourcePathArg.of(ExplicitBuildTargetSourcePath.of(getBuildTarget(), modulePath)))
-        .build();
+    if (this.addASTPath) {
+      return ImmutableList.<Arg>builder()
+          .addAll(StringArg.from("-Xlinker", "-add_ast_path"))
+          .add(StringArg.of("-Xlinker"))
+          // NB: The paths to the .swiftmodule files will be relative to the cell, not absolute.
+          //     This makes it non-machine specific but if we change the behavior, the OSO
+          //     rewriting code needs to adjusted to also fix-up N_AST entries.
+          .add(SourcePathArg.of(ExplicitBuildTargetSourcePath.of(getBuildTarget(), modulePath)))
+          .build();
+    } else {
+      return ImmutableList.<Arg>builder().build();
+    }
   }
 
   ImmutableList<Arg> getFileListLinkArg() {

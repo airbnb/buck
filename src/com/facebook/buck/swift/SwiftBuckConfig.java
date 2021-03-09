@@ -40,6 +40,7 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public static final String TRANSFORM_ERRORS_TO_ABSOLUTE_PATHS =
       "transform_errors_to_absolute_paths";
   public static final String USE_DEBUG_PREFIX_MAP = "use_debug_prefix_map";
+  public static final String ADD_AST_PATH = "add_ast_path";
   private final BuckConfig delegate;
 
   @Override
@@ -76,6 +77,10 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public boolean getUseArgfile() {
     // See https://github.com/apple/swift/pull/15853
     return delegate.getBooleanValue(SECTION_NAME, USE_ARGFILE, false);
+  }
+
+  public boolean getAddASTPath() {
+    return delegate.getBooleanValue(SECTION_NAME, ADD_AST_PATH, true);
   }
 
   /**
