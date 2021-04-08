@@ -41,7 +41,7 @@ public abstract class SwiftTargetTriple implements AddsToRuleKey {
   public abstract String getTargetSdkVersion();
 
   public String getTriple() {
-    return getArchitecture() + "-" + getVendor() + "-" + getPlatformName() + getTargetSdkVersion();
+    return getArchitecture() + "-" + getVendor() + "-" + getPlatformName() + getTargetSdkVersion() + "-simulator";
   }
 
   public static SwiftTargetTriple of(
