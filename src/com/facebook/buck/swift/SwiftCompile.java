@@ -121,6 +121,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   @AddToRuleKey private final PreprocessorFlags cxxDeps;
 
   @AddToRuleKey private final boolean importUnderlyingModule;
+  @AddToRuleKey private final boolean addXCTestImportPaths;
 
   private BuildableSupport.DepsSupplier depsSupplier;
 
@@ -143,7 +144,8 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
       Optional<SourcePath> bridgingHeader,
       Preprocessor preprocessor,
       PreprocessorFlags cxxDeps,
-      boolean importUnderlyingModule) {
+      boolean importUnderlyingModule,
+      boolean addXCTestImportPaths) {
     super(buildTarget, projectFilesystem);
     this.frameworks = frameworks;
     this.frameworkPathToSearchPath = frameworkPathToSearchPath;
@@ -201,6 +203,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
     this.cPreprocessor = preprocessor;
     this.cxxDeps = cxxDeps;
     this.depsSupplier = BuildableSupport.buildDepsSupplier(this, graphBuilder);
+    this.addXCTestImportPaths = addXCTestImportPaths;
     performChecks(buildTarget);
   }
 
@@ -234,6 +237,10 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
             .map(frameworkPathToSearchPath)
             .flatMap(searchPath -> ImmutableSet.of("-F", searchPath.toString()).stream())
             .iterator());
+
+    if (addXCTestImportPaths) {
+      compilerCommand.addAll(xctestImportArgs(resolver));
+    }
 
     compilerCommand.addAll(
         MoreIterables.zipAndConcat(Iterables.cycle("-Xcc"), getSwiftIncludeArgs(resolver)));
@@ -314,6 +321,26 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
           ? originalVersionString.substring(0, 1)
           : originalVersionString;
     }
+  }
+
+  private Iterable<String> xctestImportArgs(SourcePathResolverAdapter resolver) {
+    for (FrameworkPath frameworkPath : frameworks) {
+      if (frameworkPath
+        .getFileName(sourcePath -> resolver.getAbsolutePath(sourcePath))
+        .endsWith("XCTest.framework")) {
+        // XCTest.swiftmodule is in a different path to XCTest.framework
+        // which we need to import for Swift specific API
+
+        Path developerFrameworkPath = frameworkPathToSearchPath.apply(frameworkPath);
+        if (developerFrameworkPath.getParent() != null
+          && developerFrameworkPath.getParent().getParent() != null) {
+          Path xctestImportPath =
+            developerFrameworkPath.getParent().getParent().resolve("usr/lib");
+          return ImmutableList.of("-I", xctestImportPath.toString());
+        }
+      }
+    }
+    return ImmutableList.of();
   }
 
   private SwiftCompileStep makeModulewrapStep(SourcePathResolverAdapter resolver) {

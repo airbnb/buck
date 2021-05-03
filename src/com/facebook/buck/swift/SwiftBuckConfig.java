@@ -35,6 +35,7 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public static final String COPY_STDLIB_TO_FRAMEWORKS = "copy_stdlib_to_frameworks";
   public static final String USE_LIPO_THIN = "use_lipo_thin";
   public static final String EMIT_SWIFTDOCS = "emit_swiftdocs";
+  public static final String ADD_XCTEST_IMPORT_PATHS = "add_xctest_import_paths";
   public static final String USE_ARG_FILE = "use_arg_file";
   public static final String ADD_AST_PATH = "add_ast_path";
   private final BuckConfig delegate;
@@ -134,5 +135,13 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
    */
   public boolean getEmitSwiftdocs() {
     return delegate.getBooleanValue(SECTION_NAME, EMIT_SWIFTDOCS, false);
+  }
+
+  /**
+   * If true, add -I$PLATFORM_DIR/Developer/usr/lib so that libXCTestSwiftSupport.dylib can be found
+   * at compile time.
+   */
+  public boolean getAddXctestImportPaths() {
+    return delegate.getBooleanValue(SECTION_NAME, ADD_XCTEST_IMPORT_PATHS, true);
   }
 }
