@@ -35,7 +35,6 @@ public class OsoSymbolsContentsScrubber implements FileContentsScrubber {
     if (!Machos.isMacho(file)) {
       return;
     }
-    System.out.println(cellRootMap.toString());
     try {
       Machos.relativizeOsoSymbols(file, cellRootMap);
     } catch (Machos.MachoException e) {
