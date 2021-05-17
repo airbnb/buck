@@ -31,14 +31,16 @@ public class OsoSymbolsContentsScrubber implements FileContentsScrubber {
   }
 
   @Override
-  public void scrubFile(FileChannel file) throws IOException, ScrubException {
+  public void scrubFile(FileChannel file) throws IOException {
     if (!Machos.isMacho(file)) {
       return;
     }
     try {
       Machos.relativizeOsoSymbols(file, cellRootMap);
     } catch (Machos.MachoException e) {
-      throw new ScrubException(e.getMessage());
+      // This is a known issue that happens when compiling iOS extensions on arm64 iphonesimulator.
+      System.err.println(e.getMessage());
+      System.err.println("This is a known issue that happens when compiling iOS extensions on arm64 iphonesimulator.");
     }
   }
 }
