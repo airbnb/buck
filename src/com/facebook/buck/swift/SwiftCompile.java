@@ -221,7 +221,13 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
     ImmutableList.Builder<String> compilerCommand = ImmutableList.builder();
     compilerCommand.addAll(swiftCompiler.getCommandPrefix(resolver));
 
-    compilerCommand.add("-target", swiftTarget.getTriple());
+    String swiftTargetTriple = swiftTarget.getTriple();
+    // For arm64 simulator target, we need to add a "simulator" postfix to differentiate.
+    // Otherwise it'll be treated as targeting "ios" and would fail the compilation.
+    if (this.flavor.getName().contains("simulator") && this.flavor.getName().contains("arm64")) {
+      swiftTargetTriple += "-simulator";
+    }
+    compilerCommand.add("-target", swiftTargetTriple);
 
     if (bridgingHeader.isPresent()) {
       compilerCommand.add(
