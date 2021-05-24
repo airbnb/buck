@@ -83,7 +83,6 @@ import com.facebook.buck.io.BuildCellRelativePath;
 import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.macros.AbsoluteOutputMacroExpander;
 import com.facebook.buck.rules.macros.LocationMacroExpander;
-import com.facebook.buck.rules.macros.StringWithMacros;
 import com.facebook.buck.rules.macros.StringWithMacrosConverter;
 import com.facebook.buck.step.Step;
 import com.facebook.buck.step.fs.MakeCleanDirectoryStep;
@@ -722,7 +721,7 @@ public class AppleTestDescription
               libraryTarget,
               params,
               graphBuilder,
-              appendTestArgs(args),
+              args,
               // For now, instead of building all deps as dylibs and fixing up their install_names,
               // we'll just link them statically.
               Optional.of(Linker.LinkableDepType.STATIC),
@@ -733,20 +732,6 @@ public class AppleTestDescription
       graphBuilder.computeIfAbsent(library.getBuildTarget(), ignored -> library);
     }
     return library;
-  }
-
-  private AppleTestDescriptionArg appendTestArgs(AppleTestDescriptionArg args) {
-    AppleTestDescriptionArg.Builder builder = AppleTestDescriptionArg.builder().from(args);
-
-    if (swiftBuckConfig.getAddXctestImportPaths()) {
-      // When importing XCTest in Swift, we will need to add the linker search paths to
-      // find libXCTestSupport.dylib and XCTest.framework.
-      builder.addLinkerFlags(
-        StringWithMacros.ofConstantString("-L$PLATFORM_DIR/Developer/usr/lib"),
-        StringWithMacros.ofConstantString("-F$PLATFORM_DIR/Developer/Library/Frameworks"));
-    }
-
-    return builder.build();
   }
 
   @Override

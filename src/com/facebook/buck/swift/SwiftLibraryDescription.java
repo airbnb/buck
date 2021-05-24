@@ -313,8 +313,7 @@ public class SwiftLibraryDescription
           args.getBridgingHeader(),
           preprocessor,
           cxxDeps,
-          false,
-          swiftBuckConfig.getAddXctestImportPaths());
+          false);
     }
 
     // Otherwise, we return the generic placeholder of this library.
@@ -485,8 +484,7 @@ public class SwiftLibraryDescription
         args.getBridgingHeader(),
         preprocessor,
         preprocessFlags,
-        importUnderlyingModule,
-        swiftBuckConfig.getAddXctestImportPaths());
+        importUnderlyingModule);
   }
 
   public static boolean isSwiftTarget(BuildTarget buildTarget) {
