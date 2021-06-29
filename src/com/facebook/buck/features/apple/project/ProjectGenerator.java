@@ -3719,8 +3719,15 @@ public class ProjectGenerator {
   }
 
   private String getTargetOutputPath(TargetNode<?> targetNode) {
-    return Joiner.on('/')
-        .join("$BUILT_PRODUCTS_DIR", getBuiltProductsRelativeTargetOutputPath(targetNode));
+    String outputPath = getBuiltProductsRelativeTargetOutputPath(targetNode);
+    // The new build system on Xcode 12.5 does recognize path has a dot (.) in it, e.g `path/./dir`,
+    // so we handle it separately.
+    if (outputPath == ".") {
+      return "$BUILT_PRODUCTS_DIR";
+    } else {
+      return Joiner.on('/')
+        .join("$BUILT_PRODUCTS_DIR", outputPath);
+    }
   }
 
   @SuppressWarnings("unchecked")
