@@ -3725,8 +3725,7 @@ public class ProjectGenerator {
     if (outputPath == ".") {
       return "$BUILT_PRODUCTS_DIR";
     } else {
-      return Joiner.on('/')
-        .join("$BUILT_PRODUCTS_DIR", outputPath);
+      return Joiner.on('/').join("$BUILT_PRODUCTS_DIR", outputPath);
     }
   }
 
