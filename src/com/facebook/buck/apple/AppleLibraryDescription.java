@@ -871,27 +871,6 @@ public class AppleLibraryDescription
     return builder.build();
   }
 
-  private static CxxPreprocessorInput createSwiftPreprocessorInput(
-      ActionGraphBuilder graphBuilder, BuildTarget baseTarget) {
-    CxxHeaders swiftCompileHeaders = createSwiftModuleHeaders(graphBuilder, baseTarget);
-    CxxHeaders headers =
-        createSwiftObjcHeaders(graphBuilder, baseTarget, Type.SWIFT_EXPORTED_OBJC_GENERATED_HEADER);
-
-    CxxPreprocessorInput.Builder builder = CxxPreprocessorInput.builder();
-    builder.addIncludes(swiftCompileHeaders);
-    builder.addIncludes(headers);
-    CxxPreprocessorInput input = builder.build();
-    return input;
-  }
-
-  private static CxxHeaders createSwiftModuleHeaders(
-      ActionGraphBuilder graphBuilder, BuildTarget baseTarget) {
-    BuildTarget swiftCompileTarget = baseTarget.withAppendedFlavors(Type.SWIFT_COMPILE.getFlavor());
-    SwiftCompile compile = (SwiftCompile) graphBuilder.requireRule(swiftCompileTarget);
-
-    return CxxHeadersDir.of(CxxPreprocessables.IncludeType.LOCAL, compile.getSwiftModuleOutputPath());
-  }
-
   private static CxxHeaders createSwiftObjcHeaders(
       ActionGraphBuilder graphBuilder,
       BuildTarget baseTarget,
@@ -1051,8 +1030,6 @@ public class AppleLibraryDescription
 
     target = target.withFlavors(platform.getFlavor());
 
-    CxxPreprocessorInput publicPreprocessorInput =
-        createSwiftPreprocessorInput(graphBuilder, target);
     CxxPreprocessorInput privatePreprocessorInput =
         createSwiftPrivateCxxPreprocessorInput(graphBuilder, target);
 
@@ -1087,7 +1064,7 @@ public class AppleLibraryDescription
         new CxxLibraryDescriptionDelegate.ConfiguredDelegate() {
           @Override
           public Optional<CxxPreprocessorInput> getPreprocessorInput() {
-            return Optional.of(publicPreprocessorInput);
+            return Optional.empty();
           }
 
           @Override
