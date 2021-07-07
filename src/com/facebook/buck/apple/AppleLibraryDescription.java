@@ -862,27 +862,6 @@ public class AppleLibraryDescription
     return Optional.empty();
   }
 
-  private static CxxPreprocessorInput createSwiftPrivateCxxPreprocessorInput(
-      ActionGraphBuilder graphBuilder, BuildTarget baseTarget) {
-    CxxHeaders headers =
-        createSwiftObjcHeaders(graphBuilder, baseTarget, Type.SWIFT_OBJC_GENERATED_HEADER);
-    CxxPreprocessorInput.Builder builder = CxxPreprocessorInput.builder();
-    builder.addIncludes(headers);
-    return builder.build();
-  }
-
-  private static CxxHeaders createSwiftObjcHeaders(
-      ActionGraphBuilder graphBuilder,
-      BuildTarget baseTarget,
-      Type swiftExportedObjcGeneratedHeader) {
-    BuildTarget swiftHeadersTarget =
-        baseTarget.withAppendedFlavors(swiftExportedObjcGeneratedHeader.getFlavor());
-    HeaderSymlinkTreeWithHeaderMap headersRule =
-        (HeaderSymlinkTreeWithHeaderMap) graphBuilder.requireRule(swiftHeadersTarget);
-
-    return CxxSymlinkTreeHeaders.from(headersRule, CxxPreprocessables.IncludeType.LOCAL);
-  }
-
   private <U> Optional<U> createCxxPreprocessorInputMetadata(
       BuildTarget buildTarget,
       ActionGraphBuilder graphBuilder,
@@ -1030,9 +1009,6 @@ public class AppleLibraryDescription
 
     target = target.withFlavors(platform.getFlavor());
 
-    CxxPreprocessorInput privatePreprocessorInput =
-        createSwiftPrivateCxxPreprocessorInput(graphBuilder, target);
-
     BuildTarget generatedHeaderTarget =
         AppleLibraryDescriptionSwiftEnhancer.createBuildTargetForObjCGeneratedHeaderBuildRule(
             target, HeaderVisibility.PRIVATE, platform);
@@ -1069,7 +1045,7 @@ public class AppleLibraryDescription
 
           @Override
           public Optional<CxxPreprocessorInput> getPrivatePreprocessorInput() {
-            return Optional.of(privatePreprocessorInput);
+            return Optional.empty();
           }
 
           @Override
