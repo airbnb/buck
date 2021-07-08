@@ -16,6 +16,7 @@
 
 package com.facebook.buck.swift;
 
+import com.facebook.buck.apple.clang.VFSOverlay;
 import com.facebook.buck.core.build.buildable.context.BuildableContext;
 import com.facebook.buck.core.build.context.BuildContext;
 import com.facebook.buck.core.build.execution.context.ExecutionContext;
@@ -61,13 +62,17 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import java.io.IOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.AbstractMap;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
 import java.util.SortedSet;
 
@@ -93,6 +98,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   private final ImmutableList<Path> objectPaths;
   private final Optional<AbsPath> swiftFileListPath;
   private final Optional<AbsPath> argsFilePath;
+  private final Optional<AbsPath> vfsoverlayFilePath;
 
   @AddToRuleKey private final boolean shouldEmitSwiftdocs;
   @AddToRuleKey private final boolean useModulewrap;
@@ -184,6 +190,16 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
                         getProjectFilesystem(), getBuildTarget(), "%s__swiftcompile.argsfile")))
           : Optional.empty();
 
+    this.vfsoverlayFilePath =
+      swiftBuckConfig.getUseVFSOverlay()
+        ? Optional.of(
+        getProjectFilesystem()
+          .getRootPath()
+          .resolve(
+            BuildTargetPaths.getScratchPath(
+              getProjectFilesystem(), getBuildTarget(), "%s__vfsoverlay.yaml")))
+        : Optional.empty();
+
     this.shouldEmitSwiftdocs = swiftBuckConfig.getEmitSwiftdocs();
     this.useModulewrap = swiftBuckConfig.getUseModulewrap();
     this.compileForceCache = swiftBuckConfig.getCompileForceCache();
@@ -250,7 +266,20 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
 
     compilerCommand.addAll(
         MoreIterables.zipAndConcat(Iterables.cycle("-Xcc"), getSwiftIncludeArgs(resolver)));
-    compilerCommand.addAll(
+
+    Optional<VFSOverlay> vfsoverlay = Optional.empty();
+    if (vfsoverlayFilePath.isPresent()) {
+      vfsoverlay = Optional.of(new VFSOverlay(
+        ImmutableSortedMap.copyOf(
+          getBuildDeps().stream()
+            .filter(SwiftCompile.class::isInstance)
+            .map(SwiftCompile.class::cast)
+            .map(SwiftCompile::mapModulePathToVirtualPath)
+            .collect(ImmutableList.toImmutableList()))));
+
+      compilerCommand.add("-vfsoverlay", vfsoverlayFilePath.get().toString(), "-I", "/virtual");
+    } else {
+      compilerCommand.addAll(
         MoreIterables.zipAndConcat(
             Iterables.cycle(INCLUDE_FLAG),
             getBuildDeps().stream()
@@ -258,6 +287,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
                 .map(BuildRule::getSourcePathToOutput)
                 .map(input -> resolver.getRelativePath(input).toString())
                 .collect(ImmutableSet.toImmutableSet())));
+    }
 
     boolean hasMainEntry =
         srcs.stream()
@@ -300,7 +330,14 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
 
     ProjectFilesystem projectFilesystem = getProjectFilesystem();
     return new SwiftCompileStep(
-        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build());
+        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build(), vfsoverlay, vfsoverlayFilePath);
+  }
+
+  private static Map.Entry<Path, Path> mapModulePathToVirtualPath(SwiftCompile buildRule) {
+    Path modulePath = buildRule.getModulePath().toAbsolutePath();
+    FileSystem filesystem = modulePath.getFileSystem();
+    String filename = modulePath.getFileName().toString();
+    return new AbstractMap.SimpleEntry<>(filesystem.getPath("/virtual", filename), modulePath);
   }
 
   @VisibleForTesting
@@ -360,7 +397,7 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
 
     ProjectFilesystem projectFilesystem = getProjectFilesystem();
     return new SwiftCompileStep(
-        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build());
+        projectFilesystem.getRootPath(), argsFilePath, ImmutableMap.of(), compilerCommand.build(), Optional.empty(), vfsoverlayFilePath);
   }
 
   @Override
@@ -503,6 +540,11 @@ public class SwiftCompile extends AbstractBuildRule implements SupportsInputBase
   /** @return The name of the Swift module. */
   public String getModuleName() {
     return moduleName;
+  }
+
+  /** @return The name of the Swift path. */
+  public Path getModulePath() {
+    return modulePath;
   }
 
   /** @return List of {@link SourcePath} to the output object file(s) (i.e., .o file) */

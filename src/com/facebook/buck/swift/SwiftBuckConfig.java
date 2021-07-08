@@ -37,6 +37,7 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
   public static final String EMIT_SWIFTDOCS = "emit_swiftdocs";
   public static final String ADD_XCTEST_IMPORT_PATHS = "add_xctest_import_paths";
   public static final String USE_ARG_FILE = "use_arg_file";
+  public static final String USE_VFSOVERLAY = "use_vfsoverlay";
   public static final String ADD_AST_PATH = "add_ast_path";
   private final BuckConfig delegate;
 
@@ -77,6 +78,10 @@ public class SwiftBuckConfig implements ConfigView<BuckConfig> {
 
   public boolean getUseArgFile() {
     return delegate.getBooleanValue(SECTION_NAME, USE_ARG_FILE, false);
+  }
+
+  public boolean getUseVFSOverlay() {
+    return delegate.getBooleanValue(SECTION_NAME, USE_VFSOVERLAY, true);
   }
 
   public boolean getAddASTPath() {

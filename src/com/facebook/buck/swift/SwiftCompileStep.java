@@ -16,6 +16,7 @@
 
 package com.facebook.buck.swift;
 
+import com.facebook.buck.apple.clang.VFSOverlay;
 import com.facebook.buck.core.build.execution.context.ExecutionContext;
 import com.facebook.buck.core.filesystems.AbsPath;
 import com.facebook.buck.core.util.log.Logger;
@@ -43,16 +44,22 @@ class SwiftCompileStep implements Step {
   private final ImmutableMap<String, String> compilerEnvironment;
   private final ImmutableList<String> compilerCommand;
   private final Optional<AbsPath> argsFile;
+  private final Optional<AbsPath> vfsOverlayFile;
+  private final Optional<VFSOverlay> vfsOverlay;
 
   SwiftCompileStep(
       AbsPath compilerCwd,
       Optional<AbsPath> argsFile,
       Map<String, String> compilerEnvironment,
-      Iterable<String> compilerCommand) {
+      Iterable<String> compilerCommand,
+      Optional<VFSOverlay> vfsOverlay,
+      Optional<AbsPath> vfsOverlayFile) {
     this.compilerCwd = compilerCwd;
     this.argsFile = argsFile;
     this.compilerEnvironment = ImmutableMap.copyOf(compilerEnvironment);
     this.compilerCommand = ImmutableList.copyOf(compilerCommand);
+    this.vfsOverlay = vfsOverlay;
+    this.vfsOverlayFile = vfsOverlayFile;
   }
 
   @Override
@@ -64,6 +71,10 @@ class SwiftCompileStep implements Step {
     ProcessExecutorParams.Builder builder = ProcessExecutorParams.builder();
     builder.setDirectory(compilerCwd.getPath());
     builder.setEnvironment(compilerEnvironment);
+
+    if (vfsOverlay.isPresent() && vfsOverlayFile.isPresent()) {
+      MostFiles.writeLinesToFile(ImmutableList.of(vfsOverlay.get().render()), vfsOverlayFile.get());
+    }
 
     ImmutableList<String> localCompilerCommand =
       ImmutableList.<String>builder()
